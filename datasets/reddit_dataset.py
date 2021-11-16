@@ -1,10 +1,17 @@
 from transformers import PreTrainedTokenizerBase
-from torch.utils.data import Datasetq
+import torch
+from torch.utils.data import Dataset
+import os
+import json
+import random
 
 
-class RedditDataset(Dataset):
+class RedditPromptDataset(Dataset):
     """
-    This dataset should work on the Reddit minidataset.
+    Dataset used to train prompting methods. 
+    The null prompt is encoded differently, depending on the mask_placement
+    value. By default, the [MASK] token separates the two sequences:
+        [CLS] S1 [SEP] [MASK] S2 [SEP]
     """
     def __init__(self, 
                 path: str,
@@ -13,6 +20,7 @@ class RedditDataset(Dataset):
                 padding_end: bool=False,
                 train: bool=False,
                 just_first_seq: bool=False,
+                mask_placement: str='middle',
                 device: str='cuda'
         ):
         """
@@ -20,6 +28,15 @@ class RedditDataset(Dataset):
             path: path to folder containing the .json files (or to a .jsonl file)
             tokenizer: Huggingface or other tokenizer with ```tokenize``` method
             debug: if True, load a few examples only
+            padding_end: if True, null prompt is encoded as:
+                [CLS] S1 [SEP] [MASK] S2 [SEP] [PAD] ... [PAD]
+                    if False, padding is added after each sequence if possible:
+                [CLS] S1 [PAD] ... [PAD] [SEP] [MASK] S2 [SEP] [PAD] ... [PAD]
+            mask_placement: where to put the [MASK] token inside the null prompt:
+                'beginning': [CLS] [MASK] S1 [SEP] S2 [SEP] [PAD] ... [PAD]
+                'middle':    [CLS] S1 [SEP] [MASK] S2 [SEP] [PAD] ... [PAD]
+                'end':       [CLS] S1 [SEP] S2 [SEP] [MASK] [PAD] ... [PAD]
+
         """
         if not os.path.exists(path):
             print("inexistent path ", path)
@@ -43,9 +60,7 @@ class RedditDataset(Dataset):
         self.train = train
         self.just_first_seq = just_first_seq        
         self.device = device
-
-#         print('YES IDX:', self.yes_idx)
-#         print('YES IDX:', self.no_idx)
+        self.mask_placement = mask_placement
 
         if self.folder_input:
             self.json_files = [fname for fname in os.listdir(path) if fname.endswith('.json')]
@@ -111,8 +126,12 @@ class RedditDataset(Dataset):
                 else:
                     sample2_tokens.extend([pad_token] * (sequence_length - len_s2))
 
-                    
-                entire_sequence = [cls_token] + sample1_tokens + [sep_token] + [mask_token] + sample2_tokens + [sep_token]
+                if self.mask_placement == 'beginning':
+                    entire_sequence = [cls_token] + [mask_token] + sample1_tokens + [sep_token] + sample2_tokens + [sep_token]
+                elif self.mask_placement == 'middle':
+                    entire_sequence = [cls_token] + sample1_tokens + [sep_token] + [mask_token] + sample2_tokens + [sep_token]     
+                else:
+                    entire_sequence = [cls_token] + sample1_tokens + [sep_token] + sample2_tokens + [sep_token] + [mask_token]
                 padding_length = self.max_seq_length - len(entire_sequence)
                 attention_mask =  [1] * len(entire_sequence) + [0] * padding_length
                 entire_sequence += [pad_token] * padding_length
@@ -136,13 +155,21 @@ class RedditDataset(Dataset):
                     sample2_tokens = sample2_tokens[start_idx: start_idx + sequence_length]
                 else:
                     sample2_tokens.extend([pad_token] * (sequence_length - len_s2))
-                    
-                entire_sequence = [cls_token] + sample1_tokens + [sep_token] + [mask_token] + sample2_tokens + [sep_token]
+
+                if self.mask_placement == 'beginning':
+                    entire_sequence = [cls_token] + [mask_token] + sample1_tokens + [sep_token] + sample2_tokens + [sep_token]
+                elif self.mask_placement == 'middle':
+                    entire_sequence = [cls_token] + sample1_tokens + [sep_token] + [mask_token] + sample2_tokens + [sep_token]     
+                else:
+                    entire_sequence = [cls_token] + sample1_tokens + [sep_token] + sample2_tokens + [sep_token] + [mask_token]
 
                     
             len_s1 = len(sample1_tokens)
             len_s2 = len(sample2_tokens)
-            token_type_ids = [0 if idx_2 < (len_s1+2) else 1 for idx_2 in range(self.max_seq_length)]
+            if self.mask_placement == 'beginning':
+                token_type_ids = [0 if idx_2 < (len_s1+3) else 1 for idx_2 in range(self.max_seq_length)]
+            else:
+                token_type_ids = [0 if idx_2 < (len_s1+2) else 1 for idx_2 in range(self.max_seq_length)]
             tokenized_seq = self.tokenizer.convert_tokens_to_ids(entire_sequence)
             attention_mask = [1 if t != 0 else 0 for t in tokenized_seq]
             
@@ -169,7 +196,13 @@ class RedditDataset(Dataset):
 
                 if self.padding_end:
                     mask_position.append(len_s1 + 2)
-                    entire_sequence = [cls_token] + seq1 + [sep_token] + [mask_token] + seq2 + [sep_token]
+                    if self.mask_placement == 'beginning':
+                        entire_sequence = [cls_token] + [mask_token] + seq1 + [sep_token] + seq2 + [sep_token]
+                    elif self.mask_placement == 'middle':
+                        entire_sequence = [cls_token] + seq1 + [sep_token] + [mask_token] + seq2 + [sep_token]
+                    else:
+                        entire_sequence = [cls_token] + seq1 + [sep_token] + seq2 + [sep_token] + [mask_token]
+
                     padding_length = self.max_seq_length - len(entire_sequence)
                     attention_mask = [1] * len(entire_sequence) + [0] * padding_length
                     entire_sequence += [pad_token] * padding_length
@@ -181,13 +214,21 @@ class RedditDataset(Dataset):
                     if len_s2 < sequence_length:
                         seq2.extend([pad_token] * (sequence_length - len_s2))
 
-                    entire_sequence = [cls_token] + seq1 + [sep_token] + [mask_token] + seq2 + [sep_token]
+                    if self.mask_placement == 'beginning':
+                        entire_sequence = [cls_token] + [mask_token] + seq1 + [sep_token] + seq2 + [sep_token]
+                    elif self.mask_placement == 'middle':
+                        entire_sequence = [cls_token] + seq1 + [sep_token] + [mask_token] + seq2 + [sep_token]
+                    else:
+                        entire_sequence = [cls_token] + seq1 + [sep_token] + seq2 + [sep_token] + [mask_token]
                     tokenized_seq = self.tokenizer.convert_tokens_to_ids(entire_sequence)
                     mask_position.append(list(tokenized_seq).index(103))
                 
                 len_s1 = len(seq1)
                 len_s2 = len(seq2)
-                token_type_ids = [0 if idx_2 < (len_s1+2) else 1 for idx_2 in range(self.max_seq_length)]
+                if self.mask_placement == 'beginning':
+                    token_type_ids = [0 if idx_2 < (len_s1+3) else 1 for idx_2 in range(self.max_seq_length)]
+                else:
+                    token_type_ids = [0 if idx_2 < (len_s1+2) else 1 for idx_2 in range(self.max_seq_length)]
 
                 attention_mask = [1 if t != 0 else 0 for t in tokenized_seq]
 
