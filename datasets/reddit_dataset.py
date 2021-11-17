@@ -364,7 +364,6 @@ class RedditPromptDataset(Dataset):
 
             label = torch.tensor(label)
             mask_position = torch.tensor(mask_position)
-<<<<<<< HEAD
 #             print('label.shape', label.shape)
 #             print('mask_position.shape', mask_position.shape)
 #             print('sample_list', len(sample_list))
@@ -476,17 +475,3 @@ if __name__ == '__main__':
                 print("\t\ttoken_type_ids: ", token_type_ids_str)
                 print("\t\tattention_mask: ", attention_str)
                 break
-=======
-            #             print('label.shape', label.shape)
-            #             print('mask_position.shape', mask_position.shape)
-            #             print('sample_list', len(sample_list))
-
-            #             for t in sample_list:
-            #                 print('t.input_ids', t["input_ids"].shape)
-            #                 print('t.attention', t["attention_mask"].shape)
-            #                 print('t.ttids', t["token_type_ids"].shape)
-            #                 print('\n')
-            #             print('\n-----------------------------')
-
-            return sample_list, label, mask_position
->>>>>>> cb1fcdf6b396c78bca3f84d3c4321f76a4a671cf

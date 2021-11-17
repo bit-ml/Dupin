@@ -100,7 +100,6 @@ def eval_model(
 
 def train_prompt_model(
     model_dict,
-    tokenizer,
     train_dataloader,
     train_dataloader_full,
     val_dataloader_full,
@@ -119,6 +118,7 @@ def train_prompt_model(
 
     optimizer = AdamW(model_dict["model_params"], lr=lr, weight_decay=wd)
     model = model_dict["model"]
+    tokenizer = model.tokenizer
 
     loss_crt = CrossEntropyLoss()
 
@@ -141,9 +141,11 @@ def train_prompt_model(
             token_type_ids = batch["token_type_ids"].to(device)
 
             outputs = model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                token_type_ids=token_type_ids,
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "token_type_ids": token_type_ids,
+                }
             )
             logits = outputs[0][range(labels.shape[0]), mask_position.squeeze(), :]
 
