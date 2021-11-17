@@ -248,7 +248,7 @@ class RedditPromptDataset(Dataset):
                 )
 
 #             label = [1 for _ in range(len(sample_list))] if entry['same'] else [0 for _ in range(len(sample_list)) ]
-            label = [1] if entry['same'] else [0]
+            label = self.yes_idx if entry['same'] else self.no_idx
             
             label = torch.tensor(label)
             mask_position = torch.tensor(mask_position)

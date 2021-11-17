@@ -7,24 +7,11 @@ import os
 import numpy as np
 import tqdm
 from tqdm import tqdm
-import json
-from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
 from torch.nn import CrossEntropyLoss
-from datasets import load_dataset
-from transformers import (
-    GPT2LMHeadModel,
-    GPT2Tokenizer,
-    GPTJForCausalLM,
-    AutoTokenizer,
-    AutoModel,
-)
-from transformers import BertForMaskedLM, AdamW, PreTrainedTokenizerBase
-from promptsource.templates import TemplateCollection
-from datasets import load_dataset
-from metrics import evaluate_all
+from .metrics import evaluate_all
 from sklearn.metrics import accuracy_score
 from torch.nn.functional import softmax
-import random
+from pathlib import Path
 
 import os
 
@@ -35,41 +22,40 @@ logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR
 def eval_model(
     model,
     dataloader=None,
-    tokenizer=None,
     yes_idx=None,
     no_idx=None,
-    device=None,
-    loss_crt=None
+    device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    loss_crt=None,
 ):
-# todo: clean and add +ret loss crt
+
     all_labels = []
     all_preds = []
     preds_acc = []
 
-    for entry, label, mask_position in tqdm(dataloader, desc="eval"):
-        label = label
-        entry_pred = []
-        entry_score = []
+    dataset_loss = 0
+    for idx_sample, (entry, label, mask_position) in enumerate(
+        tqdm(dataloader, desc="eval")
+    ):
+        label_bin = 1 if (label.cpu().item() == 1) else 0
         entry_score_yes = []
-        entry_score_no = []
 
         batch_iid = None
         batch_tti = None
         batch_im = None
-        for idx, (chunk, mask_pos) in enumerate(zip(entry, mask_position[0])):
+        sample_loss = 0
+        for idx_chk, (chunk, mask_pos) in enumerate(zip(entry, mask_position[0])):
 
-            batch_iid = chunk["input_ids"].cuda()
-            batch_tti = chunk["token_type_ids"].cuda()
-            batch_im = chunk["attention_mask"].cuda()
+            batch_iid = chunk["input_ids"].to(device)
+            batch_tti = chunk["token_type_ids"].to(device)
+            batch_im = chunk["attention_mask"].to(device)
 
             output = model(
-                batch_iid,
-                token_type_ids=batch_tti,
-                attention_mask=batch_im
+                batch_iid, token_type_ids=batch_tti, attention_mask=batch_im
             )[0]
 
             batch_size = output.shape[0]
             logits = output[range(batch_size), mask_pos.item(), :]
+            sample_loss += loss_crt(logits, label)
 
             logits_yes = logits[:, yes_idx]
             logits_no = logits[:, no_idx]
@@ -78,12 +64,16 @@ def eval_model(
             probs_yes_no = softmax(logits_yes_no, dim=1)
             entry_score_yes.append(torch.mean(probs_yes_no[:, 1]).cpu().item())
 
+        sample_loss /= idx_chk
+        dataset_loss += sample_loss
+
         if len(entry_score_yes):
             pred_prob_yes = sum(entry_score_yes) / len(entry_score_yes)
-            label_cpu = label.cpu().item()
 
-            all_labels.append(label_cpu)
+            all_labels.append(label_bin)
             all_preds.append(pred_prob_yes)
+
+    dataset_loss /= idx_sample
 
     gt = np.array(all_labels)
     pred = np.array(all_preds)
@@ -101,6 +91,8 @@ def eval_model(
     accuracy = accuracy_score(gt, preds_acc)
 
     results = evaluate_all(gt, pred)
+
+    results["loss"] = dataset_loss
     results["acc"] = accuracy
 
     return results
@@ -108,18 +100,22 @@ def eval_model(
 
 def train_prompt_model(
     model_dict,
+    tokenizer,
     train_dataloader,
-    val_dataloader,
+    train_dataloader_full,
+    val_dataloader_full,
+    test_dataloader_full=None,
     epochs=200,
     wd=1e-4,
     lr=1e-4,
     scheduler=None,
-    test_dataloader=None,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    best_model_path='./best_model_path'
 ):
+    Path(best_model_path).mkdir(parents=True, exist_ok=True)
 
     yes_idx = train_dataloader.dataset.yes_idx
-    no_idx = val_dataloader.dataset.no_idx
+    no_idx = train_dataloader.dataset.no_idx
 
     optimizer = AdamW(model_dict["model_params"], lr=lr, weight_decay=wd)
     model = model_dict["model"]
@@ -129,6 +125,8 @@ def train_prompt_model(
     best_overall_val = 0.0
     train_results_list = []
     val_results_list = []
+    test_results_list = []
+
     for epoch_idx in range(epochs):
         print("epoch ", epoch_idx)
 
@@ -158,10 +156,22 @@ def train_prompt_model(
 
         with torch.no_grad():
             train_results = eval_model(
-                model, train_dataloader_eval, tokenizer, yes_idx, no_idx, device, loss_crt=loss_crt
+                model,
+                train_dataloader_full,
+                tokenizer,
+                yes_idx,
+                no_idx,
+                device,
+                loss_crt=loss_crt,
             )
             val_results = eval_model(
-                model, val_dataloader, tokenizer, yes_idx, no_idx, device, loss_crt=loss_crt
+                model,
+                val_dataloader_full,
+                tokenizer,
+                yes_idx,
+                no_idx,
+                device,
+                loss_crt=loss_crt,
             )
 
             total_epoch_train_loss = train_results["loss"]
@@ -175,11 +185,29 @@ def train_prompt_model(
 
             if val_results["overall"] > best_overall_val:
                 best_overall_val = val_results["overall"]
-                best_val_results = val_results
-                best_val_epoch = epoch_idx
                 model.save_pretrained(best_model_path)
 
             scheduler.step(total_epoch_eval_loss)
 
-        print("\tTrain loss: ", epoch_train_loss / (idx + 1))
-        print("\tEval loss: ", total_epoch_eval_loss)
+            print("\tTrain loss: ", epoch_train_loss / (idx + 1))
+            print("\tTotal train loss: ", total_epoch_train_loss)
+            print("\tTotal eval loss: ", total_epoch_eval_loss)
+
+            if test_dataloader_full:
+                test_results = eval_model(
+                    model,
+                    test_dataloader_full,
+                    tokenizer,
+                    yes_idx,
+                    no_idx,
+                    device,
+                    loss_crt=loss_crt,
+                )
+                total_epoch_train_loss = test_results["loss"]
+                test_results_list.append(test_results)
+                print("\tTotal train loss: ", total_epoch_train_loss)
+
+    if test_dataloader_full:
+        return {"train": train_results_list, "val": val_results_list, "test": test_results_list)
+    else:
+        return {"train": train_results_list, "val": val_results_list}
