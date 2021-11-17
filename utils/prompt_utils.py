@@ -7,11 +7,11 @@ import os
 import numpy as np
 import tqdm
 from tqdm import tqdm
-from torch.nn import CrossEntropyLoss
 from .metrics import evaluate_all
 from sklearn.metrics import accuracy_score
 from torch.nn.functional import softmax
 from pathlib import Path
+
 
 import os
 
@@ -50,12 +50,16 @@ def eval_model(
             batch_im = chunk["attention_mask"].to(device)
 
             output = model(
-                batch_iid, token_type_ids=batch_tti, attention_mask=batch_im
+                {
+                    "input_ids": batch_iid,
+                    "attention_mask": batch_im,
+                    "token_type_ids": batch_tti,
+                }
             )[0]
 
             batch_size = output.shape[0]
             logits = output[range(batch_size), mask_pos.item(), :]
-            sample_loss += loss_crt(logits, label)
+            sample_loss += loss_crt(logits.to(device), label.to(device)).item()
 
             logits_yes = logits[:, yes_idx]
             logits_no = logits[:, no_idx]
@@ -64,7 +68,7 @@ def eval_model(
             probs_yes_no = softmax(logits_yes_no, dim=1)
             entry_score_yes.append(torch.mean(probs_yes_no[:, 1]).cpu().item())
 
-        sample_loss /= idx_chk
+        sample_loss /= (idx_chk + 1)
         dataset_loss += sample_loss
 
         if len(entry_score_yes):
@@ -73,7 +77,7 @@ def eval_model(
             all_labels.append(label_bin)
             all_preds.append(pred_prob_yes)
 
-    dataset_loss /= idx_sample
+    dataset_loss /= (idx_sample + 1)
 
     gt = np.array(all_labels)
     pred = np.array(all_preds)
@@ -99,28 +103,25 @@ def eval_model(
 
 
 def train_prompt_model(
-    model_dict,
+    model,
     train_dataloader,
     train_dataloader_full,
     val_dataloader_full,
+    optimizer,
+    loss_crt,
+    tb_writer,
     test_dataloader_full=None,
     epochs=200,
-    wd=1e-4,
-    lr=1e-4,
     scheduler=None,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-    best_model_path='./best_model_path'
+    best_model_path="./checkpoints",
 ):
     Path(best_model_path).mkdir(parents=True, exist_ok=True)
 
     yes_idx = train_dataloader.dataset.yes_idx
     no_idx = train_dataloader.dataset.no_idx
 
-    optimizer = AdamW(model_dict["model_params"], lr=lr, weight_decay=wd)
-    model = model_dict["model"]
-    tokenizer = model.tokenizer
-
-    loss_crt = CrossEntropyLoss()
+    scheduler = scheduler(optimizer)
 
     best_overall_val = 0.0
     train_results_list = []
@@ -160,7 +161,6 @@ def train_prompt_model(
             train_results = eval_model(
                 model,
                 train_dataloader_full,
-                tokenizer,
                 yes_idx,
                 no_idx,
                 device,
@@ -169,7 +169,6 @@ def train_prompt_model(
             val_results = eval_model(
                 model,
                 val_dataloader_full,
-                tokenizer,
                 yes_idx,
                 no_idx,
                 device,
@@ -189,17 +188,26 @@ def train_prompt_model(
                 best_overall_val = val_results["overall"]
                 model.save_pretrained(best_model_path)
 
-            scheduler.step(total_epoch_eval_loss)
+            if scheduler:
+                scheduler.step(total_epoch_eval_loss)
 
             print("\tTrain loss: ", epoch_train_loss / (idx + 1))
             print("\tTotal train loss: ", total_epoch_train_loss)
             print("\tTotal eval loss: ", total_epoch_eval_loss)
 
+            for metric in train_results:
+                tb_writer.add_scalar(
+                    f"train/{metric}", train_results[metric], epoch_idx + 1
+                )
+            for metric in val_results:
+                tb_writer.add_scalar(
+                    f"val/{metric}", val_results[metric], epoch_idx + 1
+                )
+
             if test_dataloader_full:
                 test_results = eval_model(
                     model,
                     test_dataloader_full,
-                    tokenizer,
                     yes_idx,
                     no_idx,
                     device,
@@ -209,7 +217,16 @@ def train_prompt_model(
                 test_results_list.append(test_results)
                 print("\tTotal train loss: ", total_epoch_train_loss)
 
+                for metric in test_results:
+                    tb_writer.add_scalar(
+                        f"test/{metric}", test_results[metric], epoch_idx + 1
+                    )
+
     if test_dataloader_full:
-        return {"train": train_results_list, "val": val_results_list, "test": test_results_list)
+        return {
+            "train": train_results_list,
+            "val": val_results_list,
+            "test": test_results_list,
+        }
     else:
         return {"train": train_results_list, "val": val_results_list}

@@ -1,55 +1,65 @@
-import torch
-from torch.nn.functional import softmax
+import argparse
 import os
-import numpy as np
-import tqdm
-from tqdm import tqdm
-import json
 from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampler
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import CrossEntropyLoss
-from datasets import load_dataset
-from transformers import (
-    GPT2LMHeadModel,
-    GPT2Tokenizer,
-    GPTJForCausalLM,
-    AutoTokenizer,
-    AutoModel,
-    AutoModelForMaskedLM,
-    AutoModelForCausalLM,
-)
-from transformers import BertForMaskedLM, AdamW, PreTrainedTokenizerBase
-from datasets import load_dataset
-from sklearn.metrics import accuracy_score
-from torch.nn.functional import softmax
-import random
-
-import os
+from transformers import AdamW
+from models import TrainablePromptModel
+from utils import train_prompt_model
+from datasets import RedditPromptDataset
+from torch.utils.tensorboard import SummaryWriter
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+parser = argparse.ArgumentParser(description="Prompt-based Training Script")
 
-class TrainablePromptModel:
-    def __init__(
-        self, model_name="bert-base-uncased", model_type=AutoModelForMaskedLM, **kwargs
-    ):
-        self.model = model_type.from_pretrained(model_name, **kwargs)
-        self.tokenizer = model_type.from_pretrained(model_name, **kwargs)
+parser.add_argument(
+    "--train_dir",
+    type=str,
+    default="/darkweb_ds/reddit_darknet/reddit_open_split/train",
+)
+parser.add_argument(
+    "--val_dir",
+    type=str,
+    default="/darkweb_ds/reddit_darknet/reddit_open_split/val",
+)
+parser.add_argument(
+    "--test_dir",
+    type=str,
+    default="/darkweb_ds/reddit_darknet/reddit_open_split/test",
+)
+parser.add_argument(
+    "--tb_dir",
+    type=str,
+    default="./prompt_runs",
+)
+parser.add_argument(
+    "--exp_prefix",
+    type=str,
+    default="prompt_test",
+)
+parser.add_argument("--lr", type=float, default=1e-3)
+parser.add_argument("--wd", type=float, default=1e-5)
+parser.add_argument("--batch_size", type=int, default=16)
+parser.add_argument("--epochs", type=int, default=100)
 
-    def __call__(self, **kwargs):
-        return self.model(**kwargs)
+args = parser.parse_args()
 
+train_dataset_path = args.train_dir
+val_dataset_path = args.val_dir
+test_dataset_path = args.test_dir
+lr = args.lr
+wd = args.wd
+batch_size = args.batch_size
+epochs = args.epochs
+tb_dir = args.tb_dir
+exp_prefix = args.exp_prefix + f'_lr{lr}_wd{wd}'
 
-from utils import train_prompt_model
-from datasets import RedditPromptDataset
-from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+tb_writer = SummaryWriter(log_dir=os.path.join(tb_dir, exp_prefix))
 
 model = TrainablePromptModel()
 trainable_params = [p for (n, p) in model.model.named_parameters() if "bias" in n]
 
-train_dataset_path = "/darkweb_ds/reddit_darknet/reddit_open_split/train"
-val_dataset_path = "/darkweb_ds/reddit_darknet/reddit_open_split/val"
-test_dataset_path = "/darkweb_ds/reddit_darknet/reddit_open_split/test"
 
 train_dataset = RedditPromptDataset(
     path=train_dataset_path,
@@ -78,10 +88,9 @@ train_sampler_full = SequentialSampler(train_dataset_full)
 val_sampler_full = SequentialSampler(val_dataset_full)
 test_sampler_full = SequentialSampler(test_dataset_full)
 
-BATCH_SIZE = 16
 
 train_dataloader = DataLoader(
-    train_dataset, sampler=train_sampler, batch_size=BATCH_SIZE
+    train_dataset, sampler=train_sampler, batch_size=batch_size
 )
 
 train_dataloader_full = DataLoader(
@@ -96,10 +105,18 @@ test_dataloader_full = DataLoader(
     test_dataset_full, sampler=test_sampler_full, batch_size=1
 )
 
+optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
+loss_crt = CrossEntropyLoss()
+
 train_prompt_model(
-    {"model": model, "trainable_params": trainable_params},
+    model = model,
+    optimizer=optimizer,
+    loss_crt=loss_crt,
     train_dataloader=train_dataloader,
     train_dataloader_full=train_dataloader_full,
     val_dataloader_full=val_dataloader_full,
     test_dataloader_full=test_dataloader_full,
+    scheduler=ReduceLROnPlateau,
+    epochs=epochs,
+    tb_writer=tb_writer,
 )
