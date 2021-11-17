@@ -1,6 +1,7 @@
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, AutoTokenizer
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader, SequentialSampler
+from typing import Dict
 import os
 import json
 import random
@@ -264,3 +265,102 @@ class RedditPromptDataset(Dataset):
 #             print('\n-----------------------------')
             
             return sample_list, label, mask_position
+
+
+def create_dataloader(**kwargs):
+    dataset = RedditPromptDataset(**kwargs)
+    sampler = SequentialSampler(dataset)
+    loader = DataLoader(
+        dataset,
+        sampler=sampler,
+        batch_size=1
+    )
+
+    return loader
+
+def group_duplicates_list_as_string(l):
+    """
+        Given a list of number/strings, summarize list by grouping
+        consecutive entries. For instance
+            [CLS] [MASK] [TXT] [TXT] [SEP] [TXT] [TXT] [TXT] [SEP] [PAD] ... [PAD]
+        will be formatted as the following string:
+            "[CLS] [MASK] 2x[TXT] [SEP] 3x[TXT] 40x[PAD]"
+    """
+    l_str = ""
+    previous_entry = l[0]
+    counter = 1
+    for elem in l[1:]:
+        if elem != previous_entry:
+            if counter == 1:
+                l_str += ' {0}'.format(previous_entry)
+            else:
+                l_str += ' {0}*{1}'.format(counter, previous_entry)
+            previous_entry = elem
+            counter = 1
+        else:
+            counter += 1
+    if counter == 1:
+        l_str += ' {0}'.format(previous_entry)
+    else:
+        l_str += ' {0}*{1}'.format(counter, previous_entry)       
+
+    return l_str.strip()
+
+def summarize_entry(entry: Dict):
+    """
+    Formats dataset entry in a human-readable form:
+        token_ids:  "[CLS] 254*[TXT] [SEP] 254*[TXT] [SEP] [MASK]"
+        token_type_ids: "256*0 256*1"
+        attention_mask: "512*1"
+    """
+    special_ids = {
+        0: '[PAD]',
+        101: '[CLS]',
+        102: '[SEP]',
+        103: '[MASK]'
+    }
+    input_ids = entry['input_ids'][0].tolist()
+    input_ids_txt = [special_ids[token_id] if token_id in special_ids else '[TXT]' for token_id in input_ids]
+    input_ids_str =  group_duplicates_list_as_string(input_ids_txt)
+    
+    token_type_ids = entry['token_type_ids'][0]
+    token_type_ids_str = group_duplicates_list_as_string(token_type_ids)
+
+    attention_mask = entry['attention_mask'][0]
+    attention_mask_str = group_duplicates_list_as_string(attention_mask)
+
+    return input_ids_str, token_type_ids_str, attention_mask_str 
+
+
+if __name__ == '__main__':
+    example_path = "/pan2020/reddit_darknet/train/0004e99b-d8a2-4bb5-b3f6-f38309ca80af.json"
+    dataset_path = "/pan2020/reddit_darknet/train"
+    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+
+    for padding_end in [True, False]:
+        for mask_placement in ['beginning', 'middle', 'end']:
+            print("Setup: padding_end={0} mask={1}".format(padding_end, mask_placement))
+            loader = create_dataloader(
+                path=dataset_path,
+                tokenizer=tokenizer,
+                debug=False,
+                padding_end=padding_end,
+                train=False,
+                just_first_seq=True,
+                mask_placement=mask_placement,
+                device='cuda'
+            )
+
+            for ex in loader:                
+                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][0])
+                print("\tFirst batch: ")
+                print("\t\ttoken_ids: ", token_ids_str)
+                print("\t\ttoken_type_ids: ", token_type_ids_str)
+                print("\t\tattention_mask: ", attention_str)
+                
+                print("\tLast batch: ")
+                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][-1])
+                print("\t\ttoken_ids: ", token_ids_str)
+                print("\t\ttoken_type_ids: ", token_type_ids_str)
+                print("\t\tattention_mask: ", attention_str)
+                break
