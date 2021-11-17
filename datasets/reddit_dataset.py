@@ -364,38 +364,35 @@ class RedditPromptDataset(Dataset):
 
             label = torch.tensor(label)
             mask_position = torch.tensor(mask_position)
-#             print('label.shape', label.shape)
-#             print('mask_position.shape', mask_position.shape)
-#             print('sample_list', len(sample_list))
-            
-#             for t in sample_list:
-#                 print('t.input_ids', t["input_ids"].shape)
-#                 print('t.attention', t["attention_mask"].shape)
-#                 print('t.ttids', t["token_type_ids"].shape)
-#                 print('\n')
-#             print('\n-----------------------------')
-            
+            #             print('label.shape', label.shape)
+            #             print('mask_position.shape', mask_position.shape)
+            #             print('sample_list', len(sample_list))
+
+            #             for t in sample_list:
+            #                 print('t.input_ids', t["input_ids"].shape)
+            #                 print('t.attention', t["attention_mask"].shape)
+            #                 print('t.ttids', t["token_type_ids"].shape)
+            #                 print('\n')
+            #             print('\n-----------------------------')
+
             return sample_list, label, mask_position
 
 
 def create_dataloader(**kwargs):
     dataset = RedditPromptDataset(**kwargs)
     sampler = SequentialSampler(dataset)
-    loader = DataLoader(
-        dataset,
-        sampler=sampler,
-        batch_size=1
-    )
+    loader = DataLoader(dataset, sampler=sampler, batch_size=1)
 
     return loader
 
+
 def group_duplicates_list_as_string(l):
     """
-        Given a list of number/strings, summarize list by grouping
-        consecutive entries. For instance
-            [CLS] [MASK] [TXT] [TXT] [SEP] [TXT] [TXT] [TXT] [SEP] [PAD] ... [PAD]
-        will be formatted as the following string:
-            "[CLS] [MASK] 2x[TXT] [SEP] 3x[TXT] 40x[PAD]"
+    Given a list of number/strings, summarize list by grouping
+    consecutive entries. For instance
+        [CLS] [MASK] [TXT] [TXT] [SEP] [TXT] [TXT] [TXT] [SEP] [PAD] ... [PAD]
+    will be formatted as the following string:
+        "[CLS] [MASK] 2x[TXT] [SEP] 3x[TXT] 40x[PAD]"
     """
     l_str = ""
     previous_entry = l[0]
@@ -403,19 +400,20 @@ def group_duplicates_list_as_string(l):
     for elem in l[1:]:
         if elem != previous_entry:
             if counter == 1:
-                l_str += ' {0}'.format(previous_entry)
+                l_str += " {0}".format(previous_entry)
             else:
-                l_str += ' {0}*{1}'.format(counter, previous_entry)
+                l_str += " {0}*{1}".format(counter, previous_entry)
             previous_entry = elem
             counter = 1
         else:
             counter += 1
     if counter == 1:
-        l_str += ' {0}'.format(previous_entry)
+        l_str += " {0}".format(previous_entry)
     else:
-        l_str += ' {0}*{1}'.format(counter, previous_entry)       
+        l_str += " {0}*{1}".format(counter, previous_entry)
 
     return l_str.strip()
+
 
 def summarize_entry(entry: Dict):
     """
@@ -424,32 +422,32 @@ def summarize_entry(entry: Dict):
         token_type_ids: "256*0 256*1"
         attention_mask: "512*1"
     """
-    special_ids = {
-        0: '[PAD]',
-        101: '[CLS]',
-        102: '[SEP]',
-        103: '[MASK]'
-    }
-    input_ids = entry['input_ids'][0].tolist()
-    input_ids_txt = [special_ids[token_id] if token_id in special_ids else '[TXT]' for token_id in input_ids]
-    input_ids_str =  group_duplicates_list_as_string(input_ids_txt)
-    
-    token_type_ids = entry['token_type_ids'][0]
+    special_ids = {0: "[PAD]", 101: "[CLS]", 102: "[SEP]", 103: "[MASK]"}
+    input_ids = entry["input_ids"][0].tolist()
+    input_ids_txt = [
+        special_ids[token_id] if token_id in special_ids else "[TXT]"
+        for token_id in input_ids
+    ]
+    input_ids_str = group_duplicates_list_as_string(input_ids_txt)
+
+    token_type_ids = entry["token_type_ids"][0]
     token_type_ids_str = group_duplicates_list_as_string(token_type_ids)
 
-    attention_mask = entry['attention_mask'][0]
+    attention_mask = entry["attention_mask"][0]
     attention_mask_str = group_duplicates_list_as_string(attention_mask)
 
-    return input_ids_str, token_type_ids_str, attention_mask_str 
+    return input_ids_str, token_type_ids_str, attention_mask_str
 
 
-if __name__ == '__main__':
-    example_path = "/pan2020/reddit_darknet/train/0004e99b-d8a2-4bb5-b3f6-f38309ca80af.json"
+if __name__ == "__main__":
+    example_path = (
+        "/pan2020/reddit_darknet/train/0004e99b-d8a2-4bb5-b3f6-f38309ca80af.json"
+    )
     dataset_path = "/pan2020/reddit_darknet/train"
-    tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+    tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
 
     for padding_end in [True, False]:
-        for mask_placement in ['beginning', 'middle', 'end']:
+        for mask_placement in ["beginning", "middle", "end"]:
             print("Setup: padding_end={0} mask={1}".format(padding_end, mask_placement))
             loader = create_dataloader(
                 path=dataset_path,
@@ -459,18 +457,22 @@ if __name__ == '__main__':
                 train=False,
                 just_first_seq=True,
                 mask_placement=mask_placement,
-                device='cuda'
+                device="cuda",
             )
 
-            for ex in loader:                
-                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][0])
+            for ex in loader:
+                token_ids_str, token_type_ids_str, attention_str = summarize_entry(
+                    ex[0][0]
+                )
                 print("\tFirst batch: ")
                 print("\t\ttoken_ids: ", token_ids_str)
                 print("\t\ttoken_type_ids: ", token_type_ids_str)
                 print("\t\tattention_mask: ", attention_str)
-                
+
                 print("\tLast batch: ")
-                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][-1])
+                token_ids_str, token_type_ids_str, attention_str = summarize_entry(
+                    ex[0][-1]
+                )
                 print("\t\ttoken_ids: ", token_ids_str)
                 print("\t\ttoken_type_ids: ", token_type_ids_str)
                 print("\t\tattention_mask: ", attention_str)

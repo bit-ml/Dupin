@@ -53,7 +53,7 @@ wd = args.wd
 batch_size = args.batch_size
 epochs = args.epochs
 tb_dir = args.tb_dir
-exp_prefix = args.exp_prefix + f'_lr{lr}_wd{wd}'
+exp_prefix = args.exp_prefix + f"_lr{lr}_wd{wd}"
 
 tb_writer = SummaryWriter(log_dir=os.path.join(tb_dir, exp_prefix))
 
@@ -109,7 +109,7 @@ optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
 loss_crt = CrossEntropyLoss()
 
 train_prompt_model(
-    model = model,
+    model=model,
     optimizer=optimizer,
     loss_crt=loss_crt,
     train_dataloader=train_dataloader,

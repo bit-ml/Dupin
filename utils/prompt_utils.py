@@ -68,7 +68,7 @@ def eval_model(
             probs_yes_no = softmax(logits_yes_no, dim=1)
             entry_score_yes.append(torch.mean(probs_yes_no[:, 1]).cpu().item())
 
-        sample_loss /= (idx_chk + 1)
+        sample_loss /= idx_chk + 1
         dataset_loss += sample_loss
 
         if len(entry_score_yes):
@@ -77,7 +77,7 @@ def eval_model(
             all_labels.append(label_bin)
             all_preds.append(pred_prob_yes)
 
-    dataset_loss /= (idx_sample + 1)
+    dataset_loss /= idx_sample + 1
 
     gt = np.array(all_labels)
     pred = np.array(all_preds)
