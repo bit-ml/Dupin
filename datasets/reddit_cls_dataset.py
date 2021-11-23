@@ -1,10 +1,16 @@
+#%%
 from transformers import PreTrainedTokenizerBase, AutoTokenizer
 import torch
 from torch.utils.data import Dataset, DataLoader, SequentialSampler
 from typing import Dict
 import os
+from pprint import pprint
 import json
 import random
+import spacy
+from spacy import displacy
+from collections import Counter
+import en_core_web_trf
 
 
 class RedditClsDataset(Dataset):
@@ -322,43 +328,59 @@ def summarize_entry(entry: Dict):
 
 
 if __name__ == '__main__':
-    example_path = "/pan2020/reddit_darknet/train/0004e99b-d8a2-4bb5-b3f6-f38309ca80af.json"
+    #example_path = "/pan2020/reddit_darknet/train/0004e99b-d8a2-4bb5-b3f6-f38309ca80af.json"
+    example_path = "/pan2020/open_splits/unseen_authors/xs/pan20-av-small-test/aa69227b-f768-586c-9bff-9ae5105e6873.json"
     dataset_path = "/pan2020/reddit_darknet/train"
     tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
     train=True
 
-    for padding_end in [True, False]:
-        print("Setup: padding_end={0}".format(padding_end))
-        loader = create_dataloader(
-            path=dataset_path,
-            tokenizer=tokenizer,
-            debug=False,
-            padding_end=padding_end,
-            train=train,
-            just_first_seq=True,
-            device='cuda'
-        )
+    nlp = en_core_web_trf.load()
+    ex = json.load(open(example_path))
+    doc1 = ex['pair'][0]
+    doc2 = ex['pair'][1]
 
-        for ex in loader:
-            # print("ex = ", ex)
-            # break
-            if train == True:
-                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0])
-                print("\tFirst batch: ")
-                print("\t\ttoken_ids: ", token_ids_str)
-                print("\t\ttoken_type_ids: ", token_type_ids_str)
-                print("\t\tattention_mask: ", attention_str)
-            else:
-                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][0])
-                print("\tFirst batch: ")
-                print("\t\ttoken_ids: ", token_ids_str)
-                print("\t\ttoken_type_ids: ", token_type_ids_str)
-                print("\t\tattention_mask: ", attention_str)
+    doc1_spacy = nlp(doc1)
+    doc2_spacy = nlp(doc2)
+    #pprint([(X.text, X.label_) for X in doc1_spacy.ents])
+    #pprint([(X.text, X.label_) for X in doc2_spacy.ents])
+    spacy.displacy.serve(doc1_spacy, style="ent")
+    spacy.displacy.serve(doc2_spacy, style="ent")
+
+    #print(nlp.entities.cfg[u'actions'])
+    # for padding_end in [True, False]:
+    #     print("Setup: padding_end={0}".format(padding_end))
+    #     loader = create_dataloader(
+    #         path=dataset_path,
+    #         tokenizer=tokenizer,
+    #         debug=False,
+    #         padding_end=padding_end,
+    #         train=train,
+    #         just_first_seq=True,
+    #         device='cuda'
+    #     )
+
+    #     for ex in loader:
+    #         # print("ex = ", ex)
+    #         # break
+    #         if train == True:
+    #             token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0])
+    #             print("\tFirst batch: ")
+    #             print("\t\ttoken_ids: ", token_ids_str)
+    #             print("\t\ttoken_type_ids: ", token_type_ids_str)
+    #             print("\t\tattention_mask: ", attention_str)
+    #         else:
+    #             token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][0])
+    #             print("\tFirst batch: ")
+    #             print("\t\ttoken_ids: ", token_ids_str)
+    #             print("\t\ttoken_type_ids: ", token_type_ids_str)
+    #             print("\t\tattention_mask: ", attention_str)
                 
-                print("\tLast batch: ")
-                token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][-1])
-                print("\t\ttoken_ids: ", token_ids_str)
-                print("\t\ttoken_type_ids: ", token_type_ids_str)
-                print("\t\tattention_mask: ", attention_str)
-                pass
-            break
+    #             print("\tLast batch: ")
+    #             token_ids_str, token_type_ids_str, attention_str = summarize_entry(ex[0][-1])
+    #             print("\t\ttoken_ids: ", token_ids_str)
+    #             print("\t\ttoken_type_ids: ", token_type_ids_str)
+    #             print("\t\tattention_mask: ", attention_str)
+    #             pass
+    #         break
+
+# %%
