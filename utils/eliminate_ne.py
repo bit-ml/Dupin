@@ -3,16 +3,9 @@ from spacy import displacy
 import en_core_web_trf
 import json
 
-example_path = "/darkweb_ds/open_splits/unseen_authors/xs/pan20-av-small-test/aa69227b-f768-586c-9bff-9ae5105e6873.json"
-dataset_path = "/darkweb_ds/reddit_darknet/train"
 
-nlp = en_core_web_trf.load()
-ex = json.load(open(example_path))
-doc1 = ex["pair"][0]
-
-def get_named_entities(text: str) -> list:
-    processed = nlp(text)
-    print(type(processed))
+def get_named_entities(text: str, spacy_ner_f) -> list:
+    processed = spacy_ner_f(text)
     named_entities = []
 
     for ent in processed.ents:
@@ -38,9 +31,25 @@ def remove_named_entities(text: str, entity_subset: list) -> str:
     return text
 
 
-named_entities_list = get_named_entities(doc1)
-entities_to_be_removed = get_entity_subset(named_entities_list, ["PERSON"])
-new_text = remove_named_entities(doc1, entities_to_be_removed)
-print(new_text)
+def remove_entities_from_json(path: str, spacy_ner_f=en_core_web_trf) -> dict:
+    spacy_ner_f = spacy_ner_f.load()
+    dataset = json.load(open(path))
 
-# %%
+    text_a1 = dataset["pair"][0]
+    text_a2 = dataset["pair"][1]
+
+    ne_t1 = get_named_entities(text_a1, spacy_ner_f)
+    ne_t2 = get_named_entities(text_a2, spacy_ner_f)
+
+    entities_to_be_removed_t1 = get_entity_subset(ne_t1, ["PERSON"])
+    entities_to_be_removed_t2 = get_entity_subset(ne_t2, ["PERSON"])
+
+    dataset["pair"][0] = remove_named_entities(text_a1, entities_to_be_removed_t1)
+    dataset["pair"][1] = remove_named_entities(text_a2, entities_to_be_removed_t2)
+
+    return dataset
+
+
+example_path = "/darkweb_ds/open_splits/unseen_authors/xs/pan20-av-small-test/aa69227b-f768-586c-9bff-9ae5105e6873.json"
+ds = remove_entities_from_json(example_path)
+print(ds)
