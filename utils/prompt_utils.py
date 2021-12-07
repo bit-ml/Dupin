@@ -11,12 +11,168 @@ from .metrics import evaluate_all
 from sklearn.metrics import accuracy_score
 from torch.nn.functional import softmax
 from pathlib import Path
-
+from models import TrainablePromptModel
 
 import os
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
+
+
+def get_logits_prompt_train(outputs, labels, mask_position):
+    return outputs[0][range(labels.shape[0]), mask_position.squeeze(), :]
+
+def get_logits_prompt_eval(output, batch_size, mask_pos):
+    return output[range(batch_size), mask_pos.item(), :]
+
+def train_model(
+    model,
+    train_dataloader,
+    train_dataloader_full,
+    val_dataloader_full,
+    tb_writer,
+    optimizer,
+    loss_crt,
+    get_logits_train_fun=None,
+    get_logits_eval_fun=None,
+    test_dataloader_full=None,
+    epochs=200,
+    scheduler=None,
+    device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    best_model_path="./checkpoints",
+    infer_functions=False
+):
+    if infer_functions and get_logits_train_fun == None:
+        if isinstance(model, TrainablePromptModel):
+            get_logits_train_fun = get_logits_prompt_train
+        else:
+            raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_train.")
+
+    if infer_functions and get_logits_eval_fun == None:
+        if isinstance(model, TrainablePromptModel):
+            get_logits_eval_fun = get_logits_prompt_eval
+        else:
+            raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_eval.")
+
+
+    Path(best_model_path).mkdir(parents=True, exist_ok=True)
+
+    yes_idx = train_dataloader.dataset.yes_idx
+    no_idx = train_dataloader.dataset.no_idx
+
+    scheduler = scheduler(optimizer)
+
+    best_overall_val = 0.0
+    train_results_list = []
+    val_results_list = []
+    test_results_list = []
+
+    for epoch_idx in range(epochs):
+        print("epoch ", epoch_idx)
+
+        loss = 100
+        epoch_train_loss = 0.0
+        for idx, (batch, labels, mask_position) in enumerate(
+            tqdm(train_dataloader, desc=f"[Train] Loss: {loss}")
+        ):
+            labels = labels.to(device)
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            token_type_ids = batch["token_type_ids"].to(device)
+
+            outputs = model(
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "token_type_ids": token_type_ids,
+                }
+            )
+            
+            logits = get_logits_train_fun(outputs, labels, mask_position)
+
+            loss = loss_crt(logits, labels)
+            loss.backward()
+
+            epoch_train_loss += loss.cpu().item()
+            optimizer.step()
+            optimizer.zero_grad()
+
+        with torch.no_grad():
+            train_results = eval_model(
+                model,
+                train_dataloader_full,
+                yes_idx,
+                no_idx,
+                device,
+                get_logits_fun=get_logits_eval_fun,
+                loss_crt=loss_crt,
+            )
+            val_results = eval_model(
+                model,
+                val_dataloader_full,
+                yes_idx,
+                no_idx,
+                device,
+                get_logits_fun=get_logits_eval_fun,
+                loss_crt=loss_crt,
+            )
+
+            total_epoch_train_loss = train_results["loss"]
+            total_epoch_eval_loss = val_results["loss"]
+
+            train_results_list.append(train_results)
+            val_results_list.append(val_results)
+
+            print("\t[Train] Results:", train_results)
+            print("\t[Val] Results:", val_results)
+
+            if val_results["overall"] > best_overall_val:
+                best_overall_val = val_results["overall"]
+                model.save_pretrained(best_model_path)
+
+            if scheduler:
+                scheduler.step(total_epoch_eval_loss)
+
+            print("\tTrain loss: ", epoch_train_loss / (idx + 1))
+            print("\tTotal train loss: ", total_epoch_train_loss)
+            print("\tTotal eval loss: ", total_epoch_eval_loss)
+
+            for metric in train_results:
+                tb_writer.add_scalar(
+                    f"train/{metric}", train_results[metric], epoch_idx + 1
+                )
+            for metric in val_results:
+                tb_writer.add_scalar(
+                    f"val/{metric}", val_results[metric], epoch_idx + 1
+                )
+
+            if test_dataloader_full:
+                test_results = eval_model(
+                    model,
+                    test_dataloader_full,
+                    yes_idx,
+                    no_idx,
+                    device,
+                    get_logits_fun=get_logits_eval_fun,
+                    loss_crt=loss_crt,
+                )
+                total_epoch_train_loss = test_results["loss"]
+                test_results_list.append(test_results)
+                print("\tTotal train loss: ", total_epoch_train_loss)
+
+                for metric in test_results:
+                    tb_writer.add_scalar(
+                        f"test/{metric}", test_results[metric], epoch_idx + 1
+                    )
+
+    if test_dataloader_full:
+        return {
+            "train": train_results_list,
+            "val": val_results_list,
+            "test": test_results_list,
+        }
+    else:
+        return {"train": train_results_list, "val": val_results_list}
 
 
 def eval_model(
@@ -26,6 +182,7 @@ def eval_model(
     no_idx=None,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     loss_crt=None,
+    get_logits_fun=None,
 ):
 
     all_labels = []
@@ -33,6 +190,7 @@ def eval_model(
     preds_acc = []
 
     dataset_loss = 0
+    idx_sample = 0
     for idx_sample, (entry, label, mask_position) in enumerate(
         tqdm(dataloader, desc="eval")
     ):
@@ -43,6 +201,8 @@ def eval_model(
         batch_tti = None
         batch_im = None
         sample_loss = 0
+        idx_chk = 0
+        # To do: batch size > 1
         for idx_chk, (chunk, mask_pos) in enumerate(zip(entry, mask_position[0])):
 
             batch_iid = chunk["input_ids"].to(device)
@@ -58,7 +218,7 @@ def eval_model(
             )[0]
 
             batch_size = output.shape[0]
-            logits = output[range(batch_size), mask_pos.item(), :]
+            logits = get_logits_fun(output, batch_size, mask_pos)
             sample_loss += loss_crt(logits.to(device), label.to(device)).item()
 
             logits_yes = logits[:, yes_idx]
