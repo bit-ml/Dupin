@@ -23,7 +23,7 @@ def get_logits_prompt_train(outputs, labels, mask_position):
     return outputs[0][range(labels.shape[0]), mask_position.squeeze(), :]
 
 def get_logits_prompt_eval(output, batch_size, mask_pos):
-    return output[range(batch_size), mask_pos.item(), :]
+    return output[range(batch_size), mask_pos.squeeze(), :]
 
 def train_model(
     model,
@@ -40,17 +40,21 @@ def train_model(
     scheduler=None,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     best_model_path="./checkpoints",
-    infer_functions=False
+    infer_functions=True
 ):
-    if infer_functions and get_logits_train_fun == None:
+    if infer_functions and get_logits_train_fun is None:
+        print(type(model))
         if isinstance(model, TrainablePromptModel):
             get_logits_train_fun = get_logits_prompt_train
+            print('wutmate1')
         else:
             raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_train.")
 
-    if infer_functions and get_logits_eval_fun == None:
+    if infer_functions and get_logits_eval_fun is None:
+        print(type(model))
         if isinstance(model, TrainablePromptModel):
             get_logits_eval_fun = get_logits_prompt_eval
+            print('wutmate2')
         else:
             raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_eval.")
 
@@ -183,6 +187,7 @@ def eval_model(
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     loss_crt=None,
     get_logits_fun=None,
+    max_batch_size=1
 ):
 
     all_labels = []
@@ -196,19 +201,20 @@ def eval_model(
     ):
         label_bin = 1 if (label.cpu().item() == 1) else 0
         entry_score_yes = []
+        mask_position = mask_position.squeeze(0)
 
-        batch_iid = None
-        batch_tti = None
-        batch_im = None
         sample_loss = 0
-        idx_chk = 0
-        # To do: batch size > 1
-        for idx_chk, (chunk, mask_pos) in enumerate(zip(entry, mask_position[0])):
-
-            batch_iid = chunk["input_ids"].to(device)
-            batch_tti = chunk["token_type_ids"].to(device)
-            batch_im = chunk["attention_mask"].to(device)
-
+        idx_split = 0
+        while entry:
+            batch = entry[:max_batch_size]
+            batch_iid = torch.stack([e['input_ids'].squeeze() for e in batch]).to(device)
+            batch_tti = torch.stack([e['token_type_ids'].squeeze() for e in batch]).to(device)
+            batch_im = torch.stack([e['attention_mask'].squeeze() for e in batch]).to(device)
+            
+            entry = entry[max_batch_size:]
+            batch_mask_pos = mask_position[:max_batch_size]
+            mask_position = mask_position[max_batch_size:]
+            
             output = model(
                 {
                     "input_ids": batch_iid,
@@ -218,8 +224,9 @@ def eval_model(
             )[0]
 
             batch_size = output.shape[0]
-            logits = get_logits_fun(output, batch_size, mask_pos)
-            sample_loss += loss_crt(logits.to(device), label.to(device)).item()
+            logits = get_logits_fun(output, batch_size, batch_mask_pos)
+            label_batch = label.repeat(batch_size)
+            sample_loss += loss_crt(logits.to(device), label_batch.to(device)).item()
 
             logits_yes = logits[:, yes_idx]
             logits_no = logits[:, no_idx]
@@ -227,8 +234,9 @@ def eval_model(
 
             probs_yes_no = softmax(logits_yes_no, dim=1)
             entry_score_yes.append(torch.mean(probs_yes_no[:, 1]).cpu().item())
+            idx_split += 1
 
-        sample_loss /= idx_chk + 1
+        sample_loss /= idx_split
         dataset_loss += sample_loss
 
         if len(entry_score_yes):
@@ -260,133 +268,3 @@ def eval_model(
     results["acc"] = accuracy
 
     return results
-
-
-def train_prompt_model(
-    model,
-    train_dataloader,
-    train_dataloader_full,
-    val_dataloader_full,
-    optimizer,
-    loss_crt,
-    tb_writer,
-    test_dataloader_full=None,
-    epochs=200,
-    scheduler=None,
-    device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-    best_model_path="./checkpoints",
-):
-    Path(best_model_path).mkdir(parents=True, exist_ok=True)
-
-    yes_idx = train_dataloader.dataset.yes_idx
-    no_idx = train_dataloader.dataset.no_idx
-
-    scheduler = scheduler(optimizer)
-
-    best_overall_val = 0.0
-    train_results_list = []
-    val_results_list = []
-    test_results_list = []
-
-    for epoch_idx in range(epochs):
-        print("epoch ", epoch_idx)
-
-        loss = 100
-        epoch_train_loss = 0.0
-        for idx, (batch, labels, mask_position) in enumerate(
-            tqdm(train_dataloader, desc=f"[Train] Loss: {loss}")
-        ):
-            labels = labels.to(device)
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            token_type_ids = batch["token_type_ids"].to(device)
-
-            outputs = model(
-                {
-                    "input_ids": input_ids,
-                    "attention_mask": attention_mask,
-                    "token_type_ids": token_type_ids,
-                }
-            )
-            logits = outputs[0][range(labels.shape[0]), mask_position.squeeze(), :]
-
-            loss = loss_crt(logits, labels)
-            loss.backward()
-
-            epoch_train_loss += loss.cpu().item()
-            optimizer.step()
-            optimizer.zero_grad()
-
-        with torch.no_grad():
-            train_results = eval_model(
-                model,
-                train_dataloader_full,
-                yes_idx,
-                no_idx,
-                device,
-                loss_crt=loss_crt,
-            )
-            val_results = eval_model(
-                model,
-                val_dataloader_full,
-                yes_idx,
-                no_idx,
-                device,
-                loss_crt=loss_crt,
-            )
-
-            total_epoch_train_loss = train_results["loss"]
-            total_epoch_eval_loss = val_results["loss"]
-
-            train_results_list.append(train_results)
-            val_results_list.append(val_results)
-
-            print("\t[Train] Results:", train_results)
-            print("\t[Val] Results:", val_results)
-
-            if val_results["overall"] > best_overall_val:
-                best_overall_val = val_results["overall"]
-                model.save_pretrained(best_model_path)
-
-            if scheduler:
-                scheduler.step(total_epoch_eval_loss)
-
-            print("\tTrain loss: ", epoch_train_loss / (idx + 1))
-            print("\tTotal train loss: ", total_epoch_train_loss)
-            print("\tTotal eval loss: ", total_epoch_eval_loss)
-
-            for metric in train_results:
-                tb_writer.add_scalar(
-                    f"train/{metric}", train_results[metric], epoch_idx + 1
-                )
-            for metric in val_results:
-                tb_writer.add_scalar(
-                    f"val/{metric}", val_results[metric], epoch_idx + 1
-                )
-
-            if test_dataloader_full:
-                test_results = eval_model(
-                    model,
-                    test_dataloader_full,
-                    yes_idx,
-                    no_idx,
-                    device,
-                    loss_crt=loss_crt,
-                )
-                total_epoch_train_loss = test_results["loss"]
-                test_results_list.append(test_results)
-                print("\tTotal train loss: ", total_epoch_train_loss)
-
-                for metric in test_results:
-                    tb_writer.add_scalar(
-                        f"test/{metric}", test_results[metric], epoch_idx + 1
-                    )
-
-    if test_dataloader_full:
-        return {
-            "train": train_results_list,
-            "val": val_results_list,
-            "test": test_results_list,
-        }
-    else:
-        return {"train": train_results_list, "val": val_results_list}
