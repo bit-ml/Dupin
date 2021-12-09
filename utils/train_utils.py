@@ -25,6 +25,8 @@ def get_logits_prompt_train(outputs, labels, mask_position):
 def get_logits_prompt_eval(output, batch_size, mask_pos):
     return output[range(batch_size), mask_pos.squeeze(), :]
 
+def get_logits_clf_train()
+
 def train_model(
     model,
     train_dataloader,
@@ -46,7 +48,6 @@ def train_model(
         print(type(model))
         if isinstance(model, TrainablePromptModel):
             get_logits_train_fun = get_logits_prompt_train
-            print('wutmate1')
         else:
             raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_train.")
 
@@ -54,7 +55,6 @@ def train_model(
         print(type(model))
         if isinstance(model, TrainablePromptModel):
             get_logits_eval_fun = get_logits_prompt_eval
-            print('wutmate2')
         else:
             raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_eval.")
 

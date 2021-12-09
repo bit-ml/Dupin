@@ -1,3 +1,3 @@
-from .prompting_models import TrainablePromptModel
+from .models import TrainablePromptModel, TrainableClfModel
 
-__all__ = ["TrainablePromptModel"]
+__all__ = ["TrainablePromptModel", "TrainableClfModel"]
