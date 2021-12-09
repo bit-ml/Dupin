@@ -5,7 +5,7 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import CrossEntropyLoss
 from transformers import AdamW
 from models import TrainablePromptModel
-from utils import train_prompt_model
+from utils import train_prompt_model, train_model
 from datasets import RedditPromptDataset
 from torch.utils.tensorboard import SummaryWriter
 
@@ -108,7 +108,7 @@ test_dataloader_full = DataLoader(
 optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
 loss_crt = CrossEntropyLoss()
 
-train_prompt_model(
+train_model(
     model=model,
     optimizer=optimizer,
     loss_crt=loss_crt,
