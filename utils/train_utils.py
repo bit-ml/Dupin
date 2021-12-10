@@ -1,17 +1,15 @@
 import logging
-
-# Get an example
 import torch
-from torch.nn.functional import softmax
 import os
 import numpy as np
 import tqdm
+import warnings
 from tqdm import tqdm
 from .metrics import evaluate_all
 from sklearn.metrics import accuracy_score
 from torch.nn.functional import softmax
 from pathlib import Path
-from models import TrainablePromptModel
+from models import TrainablePromptModel, TrainableClfModel
 
 import os
 
@@ -19,13 +17,22 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 logging.getLogger("transformers.tokenization_utils_base").setLevel(logging.ERROR)
 
 
-def get_logits_prompt_train(outputs, labels, mask_position):
-    return outputs[0][range(labels.shape[0]), mask_position.squeeze(), :]
+def get_logits_prompt_train(output, labels, mask_position):
+    return output[0][range(labels.shape[0]), mask_position.squeeze(), :]
+
 
 def get_logits_prompt_eval(output, batch_size, mask_pos):
     return output[range(batch_size), mask_pos.squeeze(), :]
 
-def get_logits_clf_train()
+
+def get_logits_clf_train(output):
+    logits = output.logits
+    return logits
+
+
+def get_logits_clf_eval(output):
+    return output
+
 
 def train_model(
     model,
@@ -42,27 +49,29 @@ def train_model(
     scheduler=None,
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     best_model_path="./checkpoints",
-    infer_functions=True
+    infer_functions=True,
 ):
     if infer_functions and get_logits_train_fun is None:
-        print(type(model))
         if isinstance(model, TrainablePromptModel):
             get_logits_train_fun = get_logits_prompt_train
+        elif isinstance(model, TrainableClfModel):
+            get_logits_train_fun = get_logits_clf_train
         else:
-            raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_train.")
+            raise Exception(
+                f"Model {type(model)} not supported, please pass a valid function to get_logits_train."
+            )
 
     if infer_functions and get_logits_eval_fun is None:
-        print(type(model))
         if isinstance(model, TrainablePromptModel):
             get_logits_eval_fun = get_logits_prompt_eval
+        elif isinstance(model, TrainableClfModel):
+            get_logits_eval_fun = get_logits_clf_eval
         else:
-            raise Exception(f"Model {type(model)} not supported, please pass a valid function to get_logits_eval.")
-
+            raise Exception(
+                f"Model {type(model)} not supported, please pass a valid function to get_logits_eval."
+            )
 
     Path(best_model_path).mkdir(parents=True, exist_ok=True)
-
-    yes_idx = train_dataloader.dataset.yes_idx
-    no_idx = train_dataloader.dataset.no_idx
 
     scheduler = scheduler(optimizer)
 
@@ -71,28 +80,48 @@ def train_model(
     val_results_list = []
     test_results_list = []
 
+    yes_idx = train_dataloader.dataset.yes_idx
+    no_idx = train_dataloader.dataset.no_idx
+
     for epoch_idx in range(epochs):
-        print("epoch ", epoch_idx)
+        print("Epoch ", epoch_idx)
 
         loss = 100
         epoch_train_loss = 0.0
-        for idx, (batch, labels, mask_position) in enumerate(
+        for idx, ds_sample in enumerate(
             tqdm(train_dataloader, desc=f"[Train] Loss: {loss}")
         ):
+            if isinstance(model, TrainablePromptModel):
+                (batch, labels, mask_position) = ds_sample
+            elif isinstance(model, TrainableClfModel):
+                (batch, labels) = ds_sample
+            else:
+                warnings.warn("Unknown model, classification fallback.")
+                (batch, labels) = ds_sample
+
             labels = labels.to(device)
             input_ids = batch["input_ids"].to(device)
             attention_mask = batch["attention_mask"].to(device)
             token_type_ids = batch["token_type_ids"].to(device)
 
-            outputs = model(
+            output = model(
                 {
                     "input_ids": input_ids,
                     "attention_mask": attention_mask,
                     "token_type_ids": token_type_ids,
                 }
             )
-            
-            logits = get_logits_train_fun(outputs, labels, mask_position)
+
+            if isinstance(model, TrainablePromptModel):
+                logits = get_logits_train_fun(output, labels, mask_position)
+            elif isinstance(model, TrainableClfModel):
+                logits = get_logits_train_fun(output)
+                # Dataset returns labels with the 'yes' token id and 'no' token id
+                labels[labels == yes_idx] = 1
+                labels[labels == no_idx] = 0
+            else:
+                warnings.warn("Unknown model, classification fallback.")
+                logits = get_logits_train_fun(output)
 
             loss = loss_crt(logits, labels)
             loss.backward()
@@ -160,9 +189,10 @@ def train_model(
                     get_logits_fun=get_logits_eval_fun,
                     loss_crt=loss_crt,
                 )
-                total_epoch_train_loss = test_results["loss"]
+                total_epoch_test_loss = test_results["loss"]
                 test_results_list.append(test_results)
-                print("\tTotal train loss: ", total_epoch_train_loss)
+                print("\t[Test] Results:", test_results)
+                print("\tTotal test loss: ", total_epoch_test_loss)
 
                 for metric in test_results:
                     tb_writer.add_scalar(
@@ -187,7 +217,7 @@ def eval_model(
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     loss_crt=None,
     get_logits_fun=None,
-    max_batch_size=1
+    max_batch_size=1,
 ):
 
     all_labels = []
@@ -196,25 +226,40 @@ def eval_model(
 
     dataset_loss = 0
     idx_sample = 0
-    for idx_sample, (entry, label, mask_position) in enumerate(
+    for idx_sample, ds_sample in enumerate(
         tqdm(dataloader, desc="eval")
     ):
-        label_bin = 1 if (label.cpu().item() == 1) else 0
+        if isinstance(model, TrainablePromptModel):
+            (entry, label, mask_position) = ds_sample
+            mask_position = mask_position.squeeze(0)
+        elif isinstance(model, TrainableClfModel):
+            (entry, label) = ds_sample
+        else:
+            warnings.warn("Unknown model, classification fallback.")
+            (entry, label) = ds_sample
+
+        label_bin = 1 if (label.cpu().item() == yes_idx) else 0
         entry_score_yes = []
-        mask_position = mask_position.squeeze(0)
 
         sample_loss = 0
         idx_split = 0
         while entry:
             batch = entry[:max_batch_size]
-            batch_iid = torch.stack([e['input_ids'].squeeze() for e in batch]).to(device)
-            batch_tti = torch.stack([e['token_type_ids'].squeeze() for e in batch]).to(device)
-            batch_im = torch.stack([e['attention_mask'].squeeze() for e in batch]).to(device)
-            
+            batch_iid = torch.stack([e["input_ids"].squeeze() for e in batch]).to(
+                device
+            )
+            batch_tti = torch.stack([e["token_type_ids"].squeeze() for e in batch]).to(
+                device
+            )
+            batch_im = torch.stack([e["attention_mask"].squeeze() for e in batch]).to(
+                device
+            )
+
             entry = entry[max_batch_size:]
-            batch_mask_pos = mask_position[:max_batch_size]
-            mask_position = mask_position[max_batch_size:]
-            
+            if isinstance(model, TrainablePromptModel):
+                batch_mask_pos = mask_position[:max_batch_size]
+                mask_position = mask_position[max_batch_size:]
+
             output = model(
                 {
                     "input_ids": batch_iid,
@@ -224,16 +269,25 @@ def eval_model(
             )[0]
 
             batch_size = output.shape[0]
-            logits = get_logits_fun(output, batch_size, batch_mask_pos)
-            label_batch = label.repeat(batch_size)
-            sample_loss += loss_crt(logits.to(device), label_batch.to(device)).item()
 
-            logits_yes = logits[:, yes_idx]
-            logits_no = logits[:, no_idx]
+            if isinstance(model, TrainablePromptModel):
+                logits = get_logits_fun(output, batch_size, batch_mask_pos)
+                label_batch = label.repeat(batch_size)
+                logits_yes = logits[:, yes_idx]
+                logits_no = logits[:, no_idx]
+
+            elif isinstance(model, TrainableClfModel):
+                logits = get_logits_fun(output)
+                label_batch = torch.tensor(label_bin).repeat(batch_size)
+                logits_yes = logits[:, 1]
+                logits_no = logits[:, 0]
+                
             logits_yes_no = torch.stack((logits_no, logits_yes), dim=1)
 
             probs_yes_no = softmax(logits_yes_no, dim=1)
             entry_score_yes.append(torch.mean(probs_yes_no[:, 1]).cpu().item())
+            sample_loss += loss_crt(logits.to(device), label_batch.to(device)).item()
+
             idx_split += 1
 
         sample_loss /= idx_split

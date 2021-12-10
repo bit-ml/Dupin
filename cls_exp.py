@@ -4,9 +4,9 @@ from torch.utils.data import Dataset, DataLoader, RandomSampler, SequentialSampl
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn import CrossEntropyLoss
 from transformers import AdamW
-from models import TrainablePromptModel
+from models import TrainableClfModel
 from utils import train_model
-from datasets import RedditPromptDataset
+from datasets import RedditClsDataset
 from torch.utils.tensorboard import SummaryWriter
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -57,26 +57,26 @@ exp_prefix = args.exp_prefix + f"_lr{lr}_wd{wd}"
 
 tb_writer = SummaryWriter(log_dir=os.path.join(tb_dir, exp_prefix))
 
-model = TrainablePromptModel()
+model = TrainableClfModel()
 trainable_params = [p for (n, p) in model.model.named_parameters() if "bias" in n]
 
 
-train_dataset = RedditPromptDataset(
+train_dataset = RedditClsDataset(
     path=train_dataset_path,
     tokenizer=model.tokenizer,
     debug=False,
     train=True,
 )
-train_dataset_full = RedditPromptDataset(
+train_dataset_full = RedditClsDataset(
     path=train_dataset_path,
     tokenizer=model.tokenizer,
     debug=False,
     train=False,
 )
-val_dataset_full = RedditPromptDataset(
+val_dataset_full = RedditClsDataset(
     path=val_dataset_path, tokenizer=model.tokenizer, debug=False, train=False
 )
-test_dataset_full = RedditPromptDataset(
+test_dataset_full = RedditClsDataset(
     path=test_dataset_path,
     tokenizer=model.tokenizer,
     debug=False,

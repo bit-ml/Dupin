@@ -53,8 +53,8 @@ class RedditPromptDataset(Dataset):
         self.path = path
         self.max_seq_length = 512
         self.block_size = self.max_seq_length - 4
-        sequence_length = int(self.block_size / 2)
-        self.mask_position = sequence_length + 2
+        self.sequence_length = self.block_size // 2
+        self.mask_position = self.sequence_length + 2
         self.tokenizer = tokenizer
         self.yes_idx = torch.tensor(tokenizer.convert_tokens_to_ids("yes"))
         self.no_idx = torch.tensor(tokenizer.convert_tokens_to_ids("no"))
@@ -102,8 +102,6 @@ class RedditPromptDataset(Dataset):
         sample1_tokens = sample1_tokens[:min_size]
         sample2_tokens = sample2_tokens[:min_size]
 
-        sequence_length = int(self.block_size / 2)
-
         sample_list = []
         mask_position = []
 
@@ -113,27 +111,27 @@ class RedditPromptDataset(Dataset):
         if self.train:
             if self.padding_end:
                 # fix bug
-                if len_s1 > sequence_length:
+                if len_s1 > self.sequence_length:
                     if self.just_first_seq:
                         start_idx = 0
                     else:
-                        start_idx = random.randint(0, len_s1 - sequence_length - 1)
+                        start_idx = random.randint(0, len_s1 - self.sequence_length - 1)
                     sample1_tokens = sample1_tokens[
-                        start_idx : start_idx + sequence_length
+                        start_idx : start_idx + self.sequence_length
                     ]
                 else:
-                    sample1_tokens.extend([pad_token] * (sequence_length - len_s1))
+                    sample1_tokens.extend([pad_token] * (self.sequence_length - len_s1))
 
-                if len_s2 > sequence_length:
+                if len_s2 > self.sequence_length:
                     if self.just_first_seq:
                         start_idx = 0
                     else:
-                        start_idx = random.randint(0, len_s1 - sequence_length - 1)
+                        start_idx = random.randint(0, len_s1 - self.sequence_length - 1)
                     sample2_tokens = sample2_tokens[
-                        start_idx : start_idx + sequence_length
+                        start_idx : start_idx + self.sequence_length
                     ]
                 else:
-                    sample2_tokens.extend([pad_token] * (sequence_length - len_s2))
+                    sample2_tokens.extend([pad_token] * (self.sequence_length - len_s2))
 
                 if self.mask_placement == "beginning":
                     entire_sequence = (
@@ -166,29 +164,29 @@ class RedditPromptDataset(Dataset):
                 attention_mask = [1] * len(entire_sequence) + [0] * padding_length
                 entire_sequence += [pad_token] * padding_length
             else:
-                if len_s1 > sequence_length:
+                if len_s1 > self.sequence_length:
                     if self.just_first_seq:
                         start_idx = 0
                     else:
-                        start_idx = random.randint(0, len_s1 - sequence_length - 1)
+                        start_idx = random.randint(0, len_s1 - self.sequence_length - 1)
 
                     sample1_tokens = sample1_tokens[
-                        start_idx : start_idx + sequence_length
+                        start_idx : start_idx + self.sequence_length
                     ]
                 else:
-                    sample1_tokens.extend([pad_token] * (sequence_length - len_s1))
+                    sample1_tokens.extend([pad_token] * (self.sequence_length - len_s1))
 
-                if len_s2 > sequence_length:
+                if len_s2 > self.sequence_length:
                     if self.just_first_seq:
                         start_idx = 0
                     else:
-                        start_idx = random.randint(0, len_s1 - sequence_length - 1)
+                        start_idx = random.randint(0, len_s1 - self.sequence_length - 1)
 
                     sample2_tokens = sample2_tokens[
-                        start_idx : start_idx + sequence_length
+                        start_idx : start_idx + self.sequence_length
                     ]
                 else:
-                    sample2_tokens.extend([pad_token] * (sequence_length - len_s2))
+                    sample2_tokens.extend([pad_token] * (self.sequence_length - len_s2))
 
                 if self.mask_placement == "beginning":
                     entire_sequence = (
@@ -248,9 +246,9 @@ class RedditPromptDataset(Dataset):
                 torch.tensor(mask_position),
             )
         else:
-            for idx_1 in range(0, min_size, sequence_length):
-                seq1 = sample1_tokens[idx_1 : idx_1 + sequence_length]
-                seq2 = sample2_tokens[idx_1 : idx_1 + sequence_length]
+            for idx_1 in range(0, min_size, self.sequence_length):
+                seq1 = sample1_tokens[idx_1 : idx_1 + self.sequence_length]
+                seq2 = sample2_tokens[idx_1 : idx_1 + self.sequence_length]
 
                 len_s1 = len(seq1)
                 len_s2 = len(seq2)
@@ -292,11 +290,11 @@ class RedditPromptDataset(Dataset):
                         entire_sequence
                     )
                 else:
-                    if len_s1 < sequence_length:
-                        seq1.extend([pad_token] * (sequence_length - len_s1))
+                    if len_s1 < self.sequence_length:
+                        seq1.extend([pad_token] * (self.sequence_length - len_s1))
 
-                    if len_s2 < sequence_length:
-                        seq2.extend([pad_token] * (sequence_length - len_s2))
+                    if len_s2 < self.sequence_length:
+                        seq2.extend([pad_token] * (self.sequence_length - len_s2))
 
                     if self.mask_placement == "beginning":
                         entire_sequence = (

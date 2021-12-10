@@ -35,7 +35,7 @@ class RedditClsDataset(Dataset):
         """
         Arguments:
             path: path to folder containing the .json files (or to a .jsonl file)
-            tokenizer: Huggingface or other tokenizer with ```tokenize``` method
+            tokenizer: HuggingFace or other tokenizer with ```tokenize``` method
             debug: if True, load a few examples only
             padding_end: if True, null prompt is encoded as:
                 [CLS] S1 [SEP] S2 [SEP] [PAD] ... [PAD]
@@ -106,7 +106,6 @@ class RedditClsDataset(Dataset):
 
         if self.train:
             if self.padding_end:
-                # fix bug
                 if len_s1 > self.sequence_length:
                     if self.just_first_seq:
                         start_idx = 0
@@ -115,8 +114,6 @@ class RedditClsDataset(Dataset):
                     sample1_tokens = sample1_tokens[
                         start_idx : start_idx + self.sequence_length
                     ]
-                #else:
-                #    sample1_tokens.extend([pad_token] * (sequence_length - len_s1)) #is this ok here?
 
                 if len_s2 > self.sequence_length:
                     if self.just_first_seq:
@@ -126,8 +123,6 @@ class RedditClsDataset(Dataset):
                     sample2_tokens = sample2_tokens[
                         start_idx : start_idx + self.sequence_length
                     ]
-                #else:
-                #    sample2_tokens.extend([pad_token] * (sequence_length - len_s2)) #is this ok here?
 
                 entire_sequence = (
                     [cls_token]
