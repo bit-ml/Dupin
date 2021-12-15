@@ -678,8 +678,6 @@ if __name__ == '__main__':
         debug=False,
         train=True,
     )
-
-    dataset = RedditClsDataset_index()
     #example_path = "/pan2020/reddit_darknet/train/0004e99b-d8a2-4bb5-b3f6-f38309ca80af.json"
     # example_path = "/pan2020/open_splits/unseen_authors/xs/pan20-av-small-test/aa69227b-f768-586c-9bff-9ae5105e6873.json"
     # dataset_path = "/pan2020/reddit_darknet/train"
