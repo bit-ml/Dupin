@@ -99,36 +99,36 @@ def train_model(
                 warnings.warn("Unknown model, classification fallback.")
                 (batch, labels) = ds_sample
 
-            # labels = labels.to(device)
-            # input_ids = batch["input_ids"].to(device)
-            # attention_mask = batch["attention_mask"].to(device)
-            # token_type_ids = batch["token_type_ids"].to(device)
+            labels = labels.to(device)
+            input_ids = batch["input_ids"].to(device)
+            attention_mask = batch["attention_mask"].to(device)
+            token_type_ids = batch["token_type_ids"].to(device)
 
-            # output = model(
-            #     {
-            #         "input_ids": input_ids,
-            #         "attention_mask": attention_mask,
-            #         "token_type_ids": token_type_ids,
-            #     }
-            # )
+            output = model(
+                {
+                    "input_ids": input_ids,
+                    "attention_mask": attention_mask,
+                    "token_type_ids": token_type_ids,
+                }
+            )
 
-            # if isinstance(model, TrainablePromptModel):
-            #     logits = get_logits_train_fun(output, labels, mask_position)
-            # elif isinstance(model, TrainableClfModel):
-            #     logits = get_logits_train_fun(output)
-            #     # Dataset returns labels with the 'yes' token id and 'no' token id
-            #     labels[labels == yes_idx] = 1
-            #     labels[labels == no_idx] = 0
-            # else:
-            #     warnings.warn("Unknown model, classification fallback.")
-            #     logits = get_logits_train_fun(output)
+            if isinstance(model, TrainablePromptModel):
+                logits = get_logits_train_fun(output, labels, mask_position)
+            elif isinstance(model, TrainableClfModel):
+                logits = get_logits_train_fun(output)
+                # Dataset returns labels with the 'yes' token id and 'no' token id
+                labels[labels == yes_idx] = 1
+                labels[labels == no_idx] = 0
+            else:
+                warnings.warn("Unknown model, classification fallback.")
+                logits = get_logits_train_fun(output)
 
-            # loss = loss_crt(logits, labels)
-            # loss.backward()
+            loss = loss_crt(logits, labels)
+            loss.backward()
 
-            # epoch_train_loss += loss.cpu().item()
-            # optimizer.step()
-            # optimizer.zero_grad()
+            epoch_train_loss += loss.cpu().item()
+            optimizer.step()
+            optimizer.zero_grad()
 
         with torch.no_grad():
             # train_results = eval_model(
