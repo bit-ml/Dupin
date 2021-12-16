@@ -73,7 +73,7 @@ def train_model(
 
     Path(best_model_path).mkdir(parents=True, exist_ok=True)
 
-    scheduler = scheduler(optimizer)
+    scheduler = scheduler(optimizer, verbose=True)
 
     best_overall_val = 0.0
     train_results_list = []
@@ -99,48 +99,48 @@ def train_model(
                 warnings.warn("Unknown model, classification fallback.")
                 (batch, labels) = ds_sample
 
-            labels = labels.to(device)
-            input_ids = batch["input_ids"].to(device)
-            attention_mask = batch["attention_mask"].to(device)
-            token_type_ids = batch["token_type_ids"].to(device)
+            # labels = labels.to(device)
+            # input_ids = batch["input_ids"].to(device)
+            # attention_mask = batch["attention_mask"].to(device)
+            # token_type_ids = batch["token_type_ids"].to(device)
 
-            output = model(
-                {
-                    "input_ids": input_ids,
-                    "attention_mask": attention_mask,
-                    "token_type_ids": token_type_ids,
-                }
-            )
+            # output = model(
+            #     {
+            #         "input_ids": input_ids,
+            #         "attention_mask": attention_mask,
+            #         "token_type_ids": token_type_ids,
+            #     }
+            # )
 
-            if isinstance(model, TrainablePromptModel):
-                logits = get_logits_train_fun(output, labels, mask_position)
-            elif isinstance(model, TrainableClfModel):
-                logits = get_logits_train_fun(output)
-                # Dataset returns labels with the 'yes' token id and 'no' token id
-                labels[labels == yes_idx] = 1
-                labels[labels == no_idx] = 0
-            else:
-                warnings.warn("Unknown model, classification fallback.")
-                logits = get_logits_train_fun(output)
+            # if isinstance(model, TrainablePromptModel):
+            #     logits = get_logits_train_fun(output, labels, mask_position)
+            # elif isinstance(model, TrainableClfModel):
+            #     logits = get_logits_train_fun(output)
+            #     # Dataset returns labels with the 'yes' token id and 'no' token id
+            #     labels[labels == yes_idx] = 1
+            #     labels[labels == no_idx] = 0
+            # else:
+            #     warnings.warn("Unknown model, classification fallback.")
+            #     logits = get_logits_train_fun(output)
 
-            loss = loss_crt(logits, labels)
-            loss.backward()
+            # loss = loss_crt(logits, labels)
+            # loss.backward()
 
-            epoch_train_loss += loss.cpu().item()
-            optimizer.step()
-            optimizer.zero_grad()
+            # epoch_train_loss += loss.cpu().item()
+            # optimizer.step()
+            # optimizer.zero_grad()
 
         with torch.no_grad():
-            train_results = eval_model(
-                model,
-                train_dataloader_full,
-                yes_idx,
-                no_idx,
-                device,
-                get_logits_fun=get_logits_eval_fun,
-                loss_crt=loss_crt,
-            )
-            val_results = eval_model(
+            # train_results = eval_model(
+            #     model,
+            #     train_dataloader_full,
+            #     yes_idx,
+            #     no_idx,
+            #     device,
+            #     get_logits_fun=get_logits_eval_fun,
+            #     loss_crt=loss_crt,
+            # )
+            val_results = eval_model_index(
                 model,
                 val_dataloader_full,
                 yes_idx,
@@ -150,13 +150,13 @@ def train_model(
                 loss_crt=loss_crt,
             )
 
-            total_epoch_train_loss = train_results["loss"]
+            # total_epoch_train_loss = train_results["loss"]
             total_epoch_eval_loss = val_results["loss"]
 
-            train_results_list.append(train_results)
+            # train_results_list.append(train_results)
             val_results_list.append(val_results)
 
-            print("\t[Train] Results:", train_results)
+            # print("\t[Train] Results:", train_results)
             print("\t[Val] Results:", val_results)
 
             if val_results["overall"] > best_overall_val:
@@ -166,21 +166,21 @@ def train_model(
             if scheduler:
                 scheduler.step(total_epoch_eval_loss)
 
-            print("\tTrain loss: ", epoch_train_loss / (idx + 1))
-            print("\tTotal train loss: ", total_epoch_train_loss)
+            # print("\tTrain loss: ", epoch_train_loss / (idx + 1))
+            # print("\tTotal train loss: ", total_epoch_train_loss)
             print("\tTotal eval loss: ", total_epoch_eval_loss)
 
-            for metric in train_results:
-                tb_writer.add_scalar(
-                    f"train/{metric}", train_results[metric], epoch_idx + 1
-                )
+            # for metric in train_results:
+            #     tb_writer.add_scalar(
+            #         f"train/{metric}", train_results[metric], epoch_idx + 1
+            #     )
             for metric in val_results:
                 tb_writer.add_scalar(
                     f"val/{metric}", val_results[metric], epoch_idx + 1
                 )
 
             if test_dataloader_full:
-                test_results = eval_model(
+                test_results = eval_model_index(
                     model,
                     test_dataloader_full,
                     yes_idx,
@@ -201,7 +201,7 @@ def train_model(
 
     if test_dataloader_full:
         return {
-            "train": train_results_list,
+            # "train": train_results_list,
             "val": val_results_list,
             "test": test_results_list,
         }
@@ -300,6 +300,127 @@ def eval_model(
             all_preds.append(pred_prob_yes)
 
     dataset_loss /= idx_sample + 1
+
+    gt = np.array(all_labels)
+    pred = np.array(all_preds)
+
+    # sanity check:
+    assert len(gt) == len(pred)
+
+    gt = np.array(gt, dtype=np.float64)
+    pred = np.array(pred, dtype=np.float64)
+
+    preds_acc = [0 if p < 0.5 else 1 for p in pred]
+
+    assert len(gt) == len(pred)
+
+    accuracy = accuracy_score(gt, preds_acc)
+
+    results = evaluate_all(gt, pred)
+
+    results["loss"] = dataset_loss
+    results["acc"] = accuracy
+
+    return results
+
+
+
+def eval_model_index(
+    model,
+    dataloader=None,
+    yes_idx=None,
+    no_idx=None,
+    device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+    loss_crt=None,
+    get_logits_fun=None,
+    max_batch_size=1,
+):
+
+    all_labels = []
+    all_preds = []
+    preds_acc = []
+
+    chunk_labels = []
+
+    dataset_loss = 0
+    idx_sample = 0
+    dataset_scores = []
+    indices = []
+
+    for idx_sample, ds_sample in enumerate(
+        tqdm(dataloader, desc="eval")
+    ):
+        if isinstance(model, TrainablePromptModel):
+            # To do
+            warnings.warn("Unknown model, classification fallback.")
+            (batch_iid, batch_im, batch_tti, doc_ids, labels) = ds_sample
+        elif isinstance(model, TrainableClfModel):
+            (batch_iid, batch_im, batch_tti, doc_ids, labels) = ds_sample
+        else:
+            warnings.warn("Unknown model, classification fallback.")
+            (batch_iid, batch_im, batch_tti, doc_ids, labels) = ds_sample
+
+        labels_bin = [1 if label.cpu().item() == yes_idx else 0 for label in labels]
+
+        output = model(
+            {
+                "input_ids": batch_iid.to(device),
+                "attention_mask": batch_im.to(device),
+                "token_type_ids": batch_tti.to(device),
+            }
+        )[0]
+
+        batch_size = output.shape[0]
+
+        if isinstance(model, TrainablePromptModel):
+            logits = get_logits_fun(output, batch_size, batch_mask_pos)
+            label_batch = label.repeat(batch_size)
+            logits_yes = logits[:, yes_idx]
+            logits_no = logits[:, no_idx]
+
+        elif isinstance(model, TrainableClfModel):
+            logits = get_logits_fun(output)
+            label_batch = torch.tensor(labels_bin)
+            logits_yes = logits[:, 1]
+            logits_no = logits[:, 0]
+            
+        logits_yes_no = torch.stack((logits_no, logits_yes), dim=1)
+
+        probs_yes_no = softmax(logits_yes_no, dim=1)
+        dataset_scores.extend(probs_yes_no[:, 1].cpu().numpy().tolist())
+        indices.extend(doc_ids.cpu().numpy().tolist())
+        chunk_labels.extend(labels_bin)
+        sample_loss = loss_crt(logits.to(device), label_batch.to(device)).item()
+
+        dataset_loss += sample_loss
+
+        # if len(entry_score_yes):
+        #     pred_prob_yes = sum(entry_score_yes) / len(entry_score_yes)
+
+        #     all_labels.append(label_bin)
+        #     all_preds.append(pred_prob_yes)
+
+    dataset_loss /= (idx_sample + 1)
+
+    n_samples = max(indices)
+
+    all_preds = []
+    all_labels = []
+    dataset_scores = np.array(dataset_scores)
+    indices = np.array(indices)
+    chunk_labels = np.array(chunk_labels)
+
+    for sample_idx in range(n_samples+1):
+        all_preds.append(np.mean(dataset_scores[indices==sample_idx]))
+        all_labels.append(chunk_labels[indices==sample_idx][0])
+
+
+    print(all_preds)
+    print(all_labels)
+
+    print(len(all_preds))
+    print(len(all_labels))
+
 
     gt = np.array(all_labels)
     pred = np.array(all_preds)

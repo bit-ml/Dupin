@@ -58,8 +58,8 @@ class RedditClsDataset_index(Dataset):
         self.block_size = self.max_seq_length - 3
         self.sequence_length = self.block_size // 2
         self.tokenizer = tokenizer
-        self.yes_idx = torch.tensor(tokenizer.convert_tokens_to_ids("yes"))
-        self.no_idx = torch.tensor(tokenizer.convert_tokens_to_ids("no"))
+        self.yes_idx = tokenizer.convert_tokens_to_ids("yes")
+        self.no_idx = tokenizer.convert_tokens_to_ids("no")
         self.debug = debug
         self.padding_end = padding_end
         self.train = train
@@ -167,6 +167,7 @@ class RedditClsDataset_index(Dataset):
                     )
                 )
 
+        print(f"Total files: {len(self.json_files)}")
         print(f"Total: {len(doc_chunks)} chunks")
         self.doc_chunks = doc_chunks
 
@@ -222,20 +223,26 @@ class RedditClsDataset(Dataset):
         self.block_size = self.max_seq_length - 3
         self.sequence_length = self.block_size // 2
         self.tokenizer = tokenizer
-        self.yes_idx = torch.tensor(tokenizer.convert_tokens_to_ids("yes"))
-        self.no_idx = torch.tensor(tokenizer.convert_tokens_to_ids("no"))
+        self.yes_idx = tokenizer.convert_tokens_to_ids("yes")
+        self.no_idx = tokenizer.convert_tokens_to_ids("no")
         self.debug = debug
         self.padding_end = padding_end
         self.train = train
         self.just_first_seq = just_first_seq
         self.device = device
+        
+        self.json_files = []
 
         if self.folder_input:
-            self.json_files = [
+            json_files_names = [
                 fname for fname in os.listdir(path) if fname.endswith(".json")
             ]
+            for json_file in json_files_names:
+                with open(os.path.join(self.path, json_file)) as fp:
+                    entry = json.load(fp)
+                    self.json_files.append(entry)        
+
         else:
-            self.json_files = []
             with open(path) as fp:
                 for line in fp.readlines():
                     self.json_files.append(json.loads(line))
@@ -246,12 +253,12 @@ class RedditClsDataset(Dataset):
         pad_token = self.tokenizer.pad_token
         mask_token = self.tokenizer.mask_token
 
-        if self.folder_input:
-            json_file = os.path.join(self.path, self.json_files[idx])
-            with open(json_file) as fp:
-                entry = json.load(fp)
-        else:
-            entry = self.json_files[idx]
+        # if self.folder_input:
+        #     json_file = os.path.join(self.path, self.json_files[idx])
+        #     with open(json_file) as fp:
+        #         entry = json.load(fp)
+        # else:
+        entry = self.json_files[idx]
 
         sample1_tokens = self.tokenizer.tokenize(entry["pair"][0])
         sample2_tokens = self.tokenizer.tokenize(entry["pair"][1])

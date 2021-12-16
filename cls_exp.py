@@ -6,7 +6,7 @@ from torch.nn import CrossEntropyLoss
 from transformers import AdamW
 from models import TrainableClfModel
 from utils import train_model
-from datasets import RedditClsDataset
+from datasets import RedditClsDataset, RedditClsDataset_index
 from torch.utils.tensorboard import SummaryWriter
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -16,32 +16,33 @@ parser = argparse.ArgumentParser(description="Prompt-based Training Script")
 parser.add_argument(
     "--train_dir",
     type=str,
-    default="/darkweb_ds/reddit_darknet/reddit_open_split/train",
+    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-train/",
 )
+
 parser.add_argument(
     "--val_dir",
     type=str,
-    default="/darkweb_ds/reddit_darknet/reddit_open_split/val",
+    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-val",
 )
 parser.add_argument(
     "--test_dir",
     type=str,
-    default="/darkweb_ds/reddit_darknet/reddit_open_split/test",
+    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-test",
 )
 parser.add_argument(
     "--tb_dir",
     type=str,
-    default="./prompt_runs",
+    default="./cls_runs",
 )
 parser.add_argument(
     "--exp_prefix",
     type=str,
-    default="prompt_test",
+    default="XS_cls_exp_reduce_lr_plateau_nologtrain_ds",
 )
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-5)
-parser.add_argument("--batch_size", type=int, default=16)
-parser.add_argument("--epochs", type=int, default=100)
+parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--epochs", type=int, default=1000)
 
 args = parser.parse_args()
 
@@ -73,10 +74,10 @@ train_dataset_full = RedditClsDataset(
     debug=False,
     train=False,
 )
-val_dataset_full = RedditClsDataset(
+val_dataset_full = RedditClsDataset_index(
     path=val_dataset_path, tokenizer=model.tokenizer, debug=False, train=False
 )
-test_dataset_full = RedditClsDataset(
+test_dataset_full = RedditClsDataset_index(
     path=test_dataset_path,
     tokenizer=model.tokenizer,
     debug=False,
@@ -90,7 +91,7 @@ test_sampler_full = SequentialSampler(test_dataset_full)
 
 
 train_dataloader = DataLoader(
-    train_dataset, sampler=train_sampler, batch_size=batch_size
+    train_dataset, sampler=train_sampler, batch_size=batch_size, num_workers=16
 )
 
 train_dataloader_full = DataLoader(
@@ -98,11 +99,11 @@ train_dataloader_full = DataLoader(
 )
 
 val_dataloader_full = DataLoader(
-    val_dataset_full, sampler=val_sampler_full, batch_size=1
+    val_dataset_full, sampler=val_sampler_full, batch_size=32, num_workers=16
 )
 
 test_dataloader_full = DataLoader(
-    test_dataset_full, sampler=test_sampler_full, batch_size=1
+    test_dataset_full, sampler=test_sampler_full, batch_size=32, num_workers=16
 )
 
 optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
