@@ -414,14 +414,6 @@ def eval_model_index(
         all_preds.append(np.mean(dataset_scores[indices==sample_idx]))
         all_labels.append(chunk_labels[indices==sample_idx][0])
 
-
-    print(all_preds)
-    print(all_labels)
-
-    print(len(all_preds))
-    print(len(all_labels))
-
-
     gt = np.array(all_labels)
     pred = np.array(all_preds)
 
