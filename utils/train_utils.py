@@ -251,7 +251,7 @@ def eval_model(
             batch_tti = torch.stack([e["token_type_ids"].squeeze() for e in batch]).to(
                 device
             )
-            batch_im = torch.stack([e["attention_mask"].squeeze() for e in batch]).to(
+            batch_am = torch.stack([e["attention_mask"].squeeze() for e in batch]).to(
                 device
             )
 
@@ -263,7 +263,7 @@ def eval_model(
             output = model(
                 {
                     "input_ids": batch_iid,
-                    "attention_mask": batch_im,
+                    "attention_mask": batch_am,
                     "token_type_ids": batch_tti,
                 }
             )[0]
@@ -353,19 +353,19 @@ def eval_model_index(
         if isinstance(model, TrainablePromptModel):
             # To do
             warnings.warn("Unknown model, classification fallback.")
-            (batch_iid, batch_im, batch_tti, doc_ids, labels) = ds_sample
+            (batch_iid, batch_am, batch_tti, doc_ids, labels) = ds_sample
         elif isinstance(model, TrainableClfModel):
-            (batch_iid, batch_im, batch_tti, doc_ids, labels) = ds_sample
+            (batch_iid, batch_am, batch_tti, doc_ids, labels) = ds_sample
         else:
             warnings.warn("Unknown model, classification fallback.")
-            (batch_iid, batch_im, batch_tti, doc_ids, labels) = ds_sample
+            (batch_iid, batch_am, batch_tti, doc_ids, labels) = ds_sample
 
         labels_bin = [1 if label.cpu().item() == yes_idx else 0 for label in labels]
 
         output = model(
             {
                 "input_ids": batch_iid.to(device),
-                "attention_mask": batch_im.to(device),
+                "attention_mask": batch_am.to(device),
                 "token_type_ids": batch_tti.to(device),
             }
         )[0]
