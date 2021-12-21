@@ -162,13 +162,15 @@ def train_model(
 
             if val_results["overall"] > best_overall_val:
                 best_overall_val = val_results["overall"]
-                save_path = os.path.join(best_model_path, "/overall")
+                # save_path = os.path.join(best_model_path, "/overall")
+                save_path = best_model_path + '/overall'
                 model.save_pretrained(save_path)
                 print(f'Overall better, saving model to {save_path}...')
 
             if total_epoch_eval_loss < best_epoch_loss:
                 best_epoch_loss = total_epoch_eval_loss
-                save_path = os.path.join(best_model_path, "/loss")
+                # save_path = os.path.join(best_model_path, "/loss")
+                save_path = best_model_path + '/loss'
                 model.save_pretrained(save_path)
                 print(f'Loss better, saving model to {save_path}...')
 
