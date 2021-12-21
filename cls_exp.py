@@ -37,11 +37,11 @@ parser.add_argument(
 parser.add_argument(
     "--exp_prefix",
     type=str,
-    default="XS_CLS_Closed_bs16",
+    default="XS_CLS_Closed",
 )
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-5)
-parser.add_argument("--batch_size", type=int, default=16)
+parser.add_argument("--batch_size", type=int, default=12)
 parser.add_argument("--epochs", type=int, default=1000)
 
 args = parser.parse_args()
@@ -54,7 +54,7 @@ wd = args.wd
 batch_size = args.batch_size
 epochs = args.epochs
 tb_dir = args.tb_dir
-exp_prefix = args.exp_prefix + f"_lr{lr}_wd{wd}"
+exp_prefix = args.exp_prefix + f"_lr{lr}_wd{wd}_bs{batch_size}"
 
 best_model_path = os.path.join('./checkpoints', exp_prefix)
 
@@ -101,11 +101,11 @@ train_dataloader_full = DataLoader(
 )
 
 val_dataloader_full = DataLoader(
-    val_dataset_full, sampler=val_sampler_full, batch_size=32, num_workers=16
+    val_dataset_full, sampler=val_sampler_full, batch_size=batch_size, num_workers=16
 )
 
 test_dataloader_full = DataLoader(
-    test_dataset_full, sampler=test_sampler_full, batch_size=32, num_workers=16
+    test_dataset_full, sampler=test_sampler_full, batch_size=batch_size, num_workers=16
 )
 
 optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
