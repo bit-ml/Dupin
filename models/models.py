@@ -48,7 +48,7 @@ class TrainableClfModel(TrainableModel):
     ):
         super().__init__(model_name, model_type, device, **kwargs)
 
-    def __call__(self, input_data):
+    def predict(self, input_data):
         batch_iid = input_data[0]
         batch_am = input_data[1]
         batch_tti = input_data[2]
