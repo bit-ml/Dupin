@@ -16,7 +16,7 @@ parser = argparse.ArgumentParser(description="Prompt-based Training Script")
 parser.add_argument(
     "--train_dir",
     type=str,
-    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-train/",
+    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-train",
 )
 
 parser.add_argument(
@@ -37,11 +37,11 @@ parser.add_argument(
 parser.add_argument(
     "--exp_prefix",
     type=str,
-    default="XS_cls_exp_reduce_lr_plateau_nologtrain_ds",
+    default="XS_CLS_Closed_bs16",
 )
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-5)
-parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--batch_size", type=int, default=16)
 parser.add_argument("--epochs", type=int, default=1000)
 
 args = parser.parse_args()
@@ -55,6 +55,8 @@ batch_size = args.batch_size
 epochs = args.epochs
 tb_dir = args.tb_dir
 exp_prefix = args.exp_prefix + f"_lr{lr}_wd{wd}"
+
+best_model_path = os.path.join('./checkpoints', exp_prefix)
 
 tb_writer = SummaryWriter(log_dir=os.path.join(tb_dir, exp_prefix))
 
@@ -120,4 +122,5 @@ train_model(
     scheduler=ReduceLROnPlateau,
     epochs=epochs,
     tb_writer=tb_writer,
+    best_model_path=best_model_path
 )

@@ -76,6 +76,7 @@ def train_model(
     scheduler = scheduler(optimizer, verbose=True)
 
     best_overall_val = 0.0
+    best_epoch_loss = 999
     train_results_list = []
     val_results_list = []
     test_results_list = []
@@ -161,7 +162,11 @@ def train_model(
 
             if val_results["overall"] > best_overall_val:
                 best_overall_val = val_results["overall"]
-                model.save_pretrained(best_model_path)
+                model.save_pretrained(os.path.join(best_model_path, "/overall"))
+
+            if total_epoch_eval_loss > best_epoch_loss:
+                best_epoch_loss = total_epoch_eval_loss
+                model.save_pretrained(os.path.join(best_model_path, "/loss"))
 
             if scheduler:
                 scheduler.step(total_epoch_eval_loss)
