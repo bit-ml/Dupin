@@ -16,18 +16,18 @@ parser = argparse.ArgumentParser(description="Prompt-based Training Script")
 parser.add_argument(
     "--train_dir",
     type=str,
-    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-train",
+    default="/darkweb_ds/open_splits/unseen_all/xs/pan20-av-small-train.jsonl",
 )
 
 parser.add_argument(
     "--val_dir",
     type=str,
-    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-val",
+    default="/darkweb_ds/open_splits/unseen_all/xs/pan20-av-small-val.jsonl",
 )
 parser.add_argument(
     "--test_dir",
     type=str,
-    default="/darkweb_ds/closed_splits/closed_split_v1/xs/pan20-av-small-test",
+    default="/darkweb_ds/open_splits/unseen_all/xs/pan20-av-small-test.jsonl",
 )
 parser.add_argument(
     "--tb_dir",
@@ -37,12 +37,14 @@ parser.add_argument(
 parser.add_argument(
     "--exp_prefix",
     type=str,
-    default="XS_CLS_Closed",
+    default="XS_CLS_Openall",
 )
+
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-5)
 parser.add_argument("--batch_size", type=int, default=12)
 parser.add_argument("--epochs", type=int, default=1000)
+parser.add_argument("--trainable_params", type=str, default="all")  # bias, linear
 
 args = parser.parse_args()
 
@@ -54,27 +56,56 @@ wd = args.wd
 batch_size = args.batch_size
 epochs = args.epochs
 tb_dir = args.tb_dir
-exp_prefix = args.exp_prefix + f"_lr{lr}_wd{wd}_bs{batch_size}"
+trainable_params = args.trainable_params
+exp_prefix = (
+    args.exp_prefix
+    + f"_lr{lr}_wd{wd}_bs{batch_size}_trainable_params{trainable_params}"
+)
 
-best_model_path = os.path.join('./checkpoints', exp_prefix)
+best_model_path = os.path.join("./checkpoints", exp_prefix)
 
 tb_writer = SummaryWriter(log_dir=os.path.join(tb_dir, exp_prefix))
 
 model = TrainableClfModel()
-trainable_params = [p for (n, p) in model.model.named_parameters() if "bias" in n]
-
+if trainable_params == "bias":
+    trainable_params = [p for (n, p) in model.model.named_parameters() if "bias" in n]
+elif trainable_params == "linear":
+    trainable_params = model.model.classifier.parameters()
+else:
+    no_decay = ["bias", "LayerNorm.weight"]
+    trainable_params = [
+        {
+            "params": [
+                p
+                for n, p in model.model.named_parameters()
+                if not any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.01,
+        },
+        {
+            "params": [
+                p
+                for n, p in model.model.named_parameters()
+                if any(nd in n for nd in no_decay)
+            ],
+            "weight_decay": 0.0,
+        },
+    ]
 
 train_dataset = RedditClsDataset(
     path=train_dataset_path,
     tokenizer=model.tokenizer,
     debug=False,
     train=True,
+    load_data_to_memory=True,
 )
+
 train_dataset_full = RedditClsDataset(
     path=train_dataset_path,
     tokenizer=model.tokenizer,
     debug=False,
     train=False,
+    load_data_to_memory=False,
 )
 val_dataset_full = RedditClsDataset_index(
     path=val_dataset_path, tokenizer=model.tokenizer, debug=False, train=False
@@ -122,5 +153,5 @@ train_model(
     scheduler=ReduceLROnPlateau,
     epochs=epochs,
     tb_writer=tb_writer,
-    best_model_path=best_model_path
+    best_model_path=best_model_path,
 )
