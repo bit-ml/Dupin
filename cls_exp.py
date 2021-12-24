@@ -37,14 +37,14 @@ parser.add_argument(
 parser.add_argument(
     "--exp_prefix",
     type=str,
-    default="XS_CLS_Openall",
+    default="Junk_XS_CLS_Openall",
 )
 
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--wd", type=float, default=1e-5)
-parser.add_argument("--batch_size", type=int, default=12)
-parser.add_argument("--epochs", type=int, default=1000)
-parser.add_argument("--trainable_params", type=str, default="all")  # bias, linear
+parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--epochs", type=int, default=100)
+parser.add_argument("--trainable_params", type=str, default="linear")  # bias, linear
 
 args = parser.parse_args()
 
@@ -67,10 +67,11 @@ best_model_path = os.path.join("./checkpoints", exp_prefix)
 tb_writer = SummaryWriter(log_dir=os.path.join(tb_dir, exp_prefix))
 
 model = TrainableClfModel()
+
 if trainable_params == "bias":
     trainable_params = [p for (n, p) in model.model.named_parameters() if "bias" in n]
 elif trainable_params == "linear":
-    trainable_params = model.model.classifier.parameters()
+    trainable_params = list(model.model.classifier.parameters())
 else:
     no_decay = ["bias", "LayerNorm.weight"]
     trainable_params = [
@@ -80,7 +81,7 @@ else:
                 for n, p in model.model.named_parameters()
                 if not any(nd in n for nd in no_decay)
             ],
-            "weight_decay": 0.01,
+            "weight_decay": wd,
         },
         {
             "params": [
@@ -91,6 +92,20 @@ else:
             "weight_decay": 0.0,
         },
     ]
+
+# for p in trainable_params:
+#     print(p)
+
+for p in model.model.parameters():
+    p.requires_grad = False
+
+for p in trainable_params:
+    p.requires_grad = True
+
+for (n, p) in model.model.named_parameters():
+    print((n,p))
+
+optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
 
 train_dataset = RedditClsDataset(
     path=train_dataset_path,
@@ -107,9 +122,11 @@ train_dataset_full = RedditClsDataset(
     train=False,
     load_data_to_memory=False,
 )
+
 val_dataset_full = RedditClsDataset_index(
     path=val_dataset_path, tokenizer=model.tokenizer, debug=False, train=False
 )
+
 test_dataset_full = RedditClsDataset_index(
     path=test_dataset_path,
     tokenizer=model.tokenizer,
@@ -139,7 +156,6 @@ test_dataloader_full = DataLoader(
     test_dataset_full, sampler=test_sampler_full, batch_size=batch_size, num_workers=16
 )
 
-optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
 loss_crt = CrossEntropyLoss()
 
 train_model(
