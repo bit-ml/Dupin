@@ -50,7 +50,91 @@ def train_model(
     device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
     best_model_path="./checkpoints",
     infer_functions=True,
+    eval_step_idx=2000
 ):
+
+    def call_eval(eval_idx, best_overall_loss, best_overall_val, eval_name='step'):
+        with torch.no_grad():
+            print('Evaluating at eval idx ', eval_idx)
+            # train_results = eval_model(
+            #     model,
+            #     train_dataloader_full,
+            #     yes_idx,
+            #     no_idx,
+            #     device,
+            #     get_logits_fun=get_logits_eval_fun,
+            #     loss_crt=loss_crt,
+            # )
+            val_results = eval_model_index(
+                model,
+                val_dataloader_full,
+                yes_idx,
+                no_idx,
+                device,
+                get_logits_fun=get_logits_eval_fun,
+                loss_crt=loss_crt,
+            )
+
+            # total_epoch_train_loss = train_results["loss"]
+            total_epoch_eval_loss = val_results["loss"]
+
+            # train_results_list.append(train_results)
+            val_results_list.append(val_results)
+
+            # print("\t[Train] Results:", train_results)
+            print("\t[Val] Results:", val_results)
+
+            if val_results["overall"] > best_overall_val:
+                best_overall_val = val_results["overall"]
+                # save_path = os.path.join(best_model_path, "/overall")
+                save_path = best_model_path + '/overall'
+                model.save_pretrained(save_path)
+                print(f'Overall better, saving model to {save_path}...')
+
+            if total_epoch_eval_loss < best_overall_loss:
+                best_overall_loss = total_epoch_eval_loss
+                # save_path = os.path.join(best_model_path, "/loss")
+                save_path = best_model_path + '/loss'
+                model.save_pretrained(save_path)
+                print(f'Loss better, saving model to {save_path}...')
+
+            if scheduler:
+                scheduler.step(total_epoch_eval_loss)
+
+            # print("\tTrain loss: ", epoch_train_loss / (idx + 1))
+            # print("\tTotal train loss: ", total_epoch_train_loss)
+            print("\tTotal eval loss: ", total_epoch_eval_loss)
+
+            # for metric in train_results:
+            #     tb_writer.add_scalar(
+            #         f"train/{eval_name}/{metric}", train_results[metric], eval_idx
+            #     )
+            for metric in val_results:
+                tb_writer.add_scalar(
+                    f"val/{eval_name}/{metric}", val_results[metric], eval_idx
+                )
+
+            if test_dataloader_full:
+                test_results = eval_model_index(
+                    model,
+                    test_dataloader_full,
+                    yes_idx,
+                    no_idx,
+                    device,
+                    get_logits_fun=get_logits_eval_fun,
+                    loss_crt=loss_crt,
+                )
+                total_epoch_test_loss = test_results["loss"]
+                test_results_list.append(test_results)
+                print("\t[Test] Results:", test_results)
+                print("\tTotal test loss: ", total_epoch_test_loss)
+
+                for metric in test_results:
+                    tb_writer.add_scalar(
+                        f"test/{eval_name}/{metric}", test_results[metric], eval_idx
+                    )
+        return best_overall_loss, best_overall_val
+
     if infer_functions and get_logits_train_fun is None:
         if isinstance(model, TrainablePromptModel):
             get_logits_train_fun = get_logits_prompt_train
@@ -76,7 +160,7 @@ def train_model(
     scheduler = scheduler(optimizer, verbose=True)
 
     best_overall_val = 0.0
-    best_epoch_loss = 999
+    best_overall_loss = 999
     train_results_list = []
     val_results_list = []
     test_results_list = []
@@ -131,84 +215,8 @@ def train_model(
             optimizer.step()
             optimizer.zero_grad()
 
-        with torch.no_grad():
-            # train_results = eval_model(
-            #     model,
-            #     train_dataloader_full,
-            #     yes_idx,
-            #     no_idx,
-            #     device,
-            #     get_logits_fun=get_logits_eval_fun,
-            #     loss_crt=loss_crt,
-            # )
-            val_results = eval_model_index(
-                model,
-                val_dataloader_full,
-                yes_idx,
-                no_idx,
-                device,
-                get_logits_fun=get_logits_eval_fun,
-                loss_crt=loss_crt,
-            )
-
-            # total_epoch_train_loss = train_results["loss"]
-            total_epoch_eval_loss = val_results["loss"]
-
-            # train_results_list.append(train_results)
-            val_results_list.append(val_results)
-
-            # print("\t[Train] Results:", train_results)
-            print("\t[Val] Results:", val_results)
-
-            if val_results["overall"] > best_overall_val:
-                best_overall_val = val_results["overall"]
-                # save_path = os.path.join(best_model_path, "/overall")
-                save_path = best_model_path + '/overall'
-                model.save_pretrained(save_path)
-                print(f'Overall better, saving model to {save_path}...')
-
-            if total_epoch_eval_loss < best_epoch_loss:
-                best_epoch_loss = total_epoch_eval_loss
-                # save_path = os.path.join(best_model_path, "/loss")
-                save_path = best_model_path + '/loss'
-                model.save_pretrained(save_path)
-                print(f'Loss better, saving model to {save_path}...')
-
-            if scheduler:
-                scheduler.step(total_epoch_eval_loss)
-
-            # print("\tTrain loss: ", epoch_train_loss / (idx + 1))
-            # print("\tTotal train loss: ", total_epoch_train_loss)
-            print("\tTotal eval loss: ", total_epoch_eval_loss)
-
-            # for metric in train_results:
-            #     tb_writer.add_scalar(
-            #         f"train/{metric}", train_results[metric], epoch_idx + 1
-            #     )
-            for metric in val_results:
-                tb_writer.add_scalar(
-                    f"val/{metric}", val_results[metric], epoch_idx + 1
-                )
-
-            if test_dataloader_full:
-                test_results = eval_model_index(
-                    model,
-                    test_dataloader_full,
-                    yes_idx,
-                    no_idx,
-                    device,
-                    get_logits_fun=get_logits_eval_fun,
-                    loss_crt=loss_crt,
-                )
-                total_epoch_test_loss = test_results["loss"]
-                test_results_list.append(test_results)
-                print("\t[Test] Results:", test_results)
-                print("\tTotal test loss: ", total_epoch_test_loss)
-
-                for metric in test_results:
-                    tb_writer.add_scalar(
-                        f"test/{metric}", test_results[metric], epoch_idx + 1
-                    )
+            if idx % eval_step_idx == 0:
+                best_overall_loss, best_overall_val = call_eval(idx, best_overall_loss, best_overall_val)
 
     if test_dataloader_full:
         return {
