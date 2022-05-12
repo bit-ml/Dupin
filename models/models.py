@@ -16,6 +16,7 @@ class TrainableModel:
         device=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
         **kwargs
     ):
+        self.model_name = model_name
         self.model = model_type.from_pretrained(model_name, **kwargs).to(device)
         self.tokenizer = AutoTokenizer.from_pretrained(model_name, **kwargs)
         self.device = device

@@ -84,6 +84,8 @@ class RedditClsDataset_index(Dataset):
         doc_chunks = []
 
         for doc_idx, entry in enumerate(tqdm(self.json_files, desc='Loading files...')):
+            #if doc_idx == 32:
+            #    break
             if self.folder_input:
                 entry = os.path.join(self.path, entry)
                 with open(entry) as fp:
@@ -156,6 +158,7 @@ class RedditClsDataset_index(Dataset):
                 attention_mask = [1 if t != 0 else 0 for t in tokenized_seq]
 
                 label = self.yes_idx if entry["same"] else self.no_idx
+                #print("label = ", label.shape)
 
                 doc_chunks.append(
                     (
@@ -237,14 +240,18 @@ class RedditClsDataset(Dataset):
             json_files_names = [
                 fname for fname in os.listdir(path) if fname.endswith(".json")
             ]
-            for json_file in json_files_names:
+            for idx, json_file in enumerate(json_files_names):
+                if idx % 10000 == 0:
+                    print(idx, " files read")
                 with open(os.path.join(self.path, json_file)) as fp:
                     entry = json.load(fp)
                     self.json_files.append(entry)        
 
         else:
             with open(path) as fp:
-                for line in fp.readlines():
+                for idx, line in enumerate(fp.readlines()):
+                    if idx % 10000 == 0:
+                        print(idx, " files read")
                     self.json_files.append(json.loads(line))
 
     def __getitem__(self, idx):

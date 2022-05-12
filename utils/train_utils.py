@@ -26,8 +26,9 @@ def get_logits_prompt_eval(output, batch_size, mask_pos):
 
 
 def get_logits_clf_train(output):
-    logits = output.logits
-    return logits
+    #print("output = ", output)
+    #logits = output.logits
+    return output
 
 
 def get_logits_clf_eval(output):
@@ -189,13 +190,22 @@ def train_model(
             attention_mask = batch["attention_mask"].to(device)
             token_type_ids = batch["token_type_ids"].to(device)
 
-            output = model(
-                {
-                    "input_ids": input_ids,
-                    "attention_mask": attention_mask,
-                    "token_type_ids": token_type_ids,
-                }
-            )
+
+            if 'distilbert' in model.model_name:
+                output = model(
+                    {
+                        "input_ids": input_ids,
+                        "attention_mask": attention_mask
+                    }
+                )[0]
+            else:
+                output = model(
+                    {
+                        "input_ids": input_ids,
+                        "attention_mask": attention_mask,
+                        "token_type_ids": token_type_ids,
+                    }
+                )[0]
 
             if isinstance(model, TrainablePromptModel):
                 logits = get_logits_train_fun(output, labels, mask_position)
@@ -211,12 +221,21 @@ def train_model(
             loss = loss_crt(logits, labels)
             loss.backward()
 
-            epoch_train_loss += loss.cpu().item()
+            scalar_loss = loss.cpu().item()
+            tb_writer.add_scalar(
+                f"train/step/loss", scalar_loss, epoch_idx*len(train_dataloader)+idx
+            )
+
+            epoch_train_loss += scalar_loss
             optimizer.step()
             optimizer.zero_grad()
 
             if idx % eval_step_idx == 0:
-                best_overall_loss, best_overall_val = call_eval(idx, best_overall_loss, best_overall_val)
+                best_overall_loss, best_overall_val = call_eval(
+                    epoch_idx*len(train_dataloader)+idx, 
+                    best_overall_loss, 
+                    best_overall_val
+                )
 
     if test_dataloader_full:
         return {
@@ -252,7 +271,7 @@ def eval_model(
             (entry, label, mask_position) = ds_sample
             mask_position = mask_position.squeeze(0)
         elif isinstance(model, TrainableClfModel):
-            (entry, label) = ds_sample
+            entry, label, mask_position = ds_sample[0], ds_sample[1], ds_sample[2]
         else:
             warnings.warn("Unknown model, classification fallback.")
             (entry, label) = ds_sample
@@ -381,13 +400,22 @@ def eval_model_index(
 
         labels_bin = [1 if label.cpu().item() == yes_idx else 0 for label in labels]
 
-        output = model(
-            {
-                "input_ids": batch_iid.to(device),
-                "attention_mask": batch_am.to(device),
-                "token_type_ids": batch_tti.to(device),
-            }
-        )[0]
+        #print("model.model_name = ", model.model_name)
+        if 'distilbert' in model.model_name:
+            output = model(
+                {
+                    "input_ids": batch_iid.to(device),
+                    "attention_mask": batch_am.to(device)
+                }
+            )[0]
+        else:
+            output = model(
+                {
+                    "input_ids": batch_iid.to(device),
+                    "attention_mask": batch_am.to(device),
+                    "token_type_ids": batch_tti.to(device),
+                }
+            )[0]
 
         batch_size = output.shape[0]
 
@@ -406,7 +434,7 @@ def eval_model_index(
         logits_yes_no = torch.stack((logits_no, logits_yes), dim=1)
 
         probs_yes_no = softmax(logits_yes_no, dim=1)
-        dataset_scores.extend(probs_yes_no[:, 1].cpu().numpy().tolist())
+        dataset_scores.extend(probs_yes_no[:, 1].cpu().detach().numpy().tolist())
         indices.extend(doc_ids.cpu().numpy().tolist())
         chunk_labels.extend(labels_bin)
         sample_loss = loss_crt(logits.to(device), label_batch.to(device)).item()
