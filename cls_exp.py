@@ -16,18 +16,18 @@ parser = argparse.ArgumentParser(description="Prompt-based Training Script")
 parser.add_argument(
     "--train_dir",
     type=str,
-    default="/pan2020/open_splits/unseen_all/xl/pan20-av-large-train",
+    default="/darkweb2/darkreddit_authorship_verification/darkreddit_authorship_verification_train.jsonl",
 )
 
 parser.add_argument(
     "--val_dir",
     type=str,
-    default="/pan2020/open_splits/unseen_all/xl/pan20-av-large-val",
+    default="/darkweb2/darkreddit_authorship_verification/darkreddit_authorship_verification_val.jsonl",
 )
 parser.add_argument(
     "--test_dir",
     type=str,
-    default="/pan2020/open_splits/unseen_all/xl/pan20-av-large-test",
+    default="/darkweb2/darkreddit_authorship_verification/darkreddit_authorship_verification_test.jsonl",
 )
 parser.add_argument(
     "--tb_dir",
@@ -40,9 +40,9 @@ parser.add_argument(
     default="Junk_XS_CLS_Openall",
 )
 
-parser.add_argument("--lr", type=float, default=5e-5) #0.001 0.00003
+parser.add_argument("--lr", type=float, default=1e-5) #0.001 0.00003
 parser.add_argument("--wd", type=float, default=1e-5)
-parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--batch_size", type=int, default=16)
 parser.add_argument("--epochs", type=int, default=20)
 parser.add_argument("--trainable_params", type=str, default="linear")  # bias, linear
 
@@ -77,7 +77,7 @@ MODEL_NAMES = {
     'distilbert': 'distilbert-base-uncased',
     'albert': 'albert-base-v2'
 }
-model = TrainableClfModel(model_name=MODEL_NAMES['distilbert'])
+model = TrainableClfModel(model_name=MODEL_NAMES['bert'])
 
 if trainable_params == "bias":
     trainable_params = [p for (n, p) in model.model.named_parameters() if "bias" in n]

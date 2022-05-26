@@ -10,6 +10,7 @@ from sklearn.metrics import accuracy_score
 from torch.nn.functional import softmax
 from pathlib import Path
 from models import TrainablePromptModel, TrainableClfModel
+from datetime import datetime
 
 import os
 
@@ -388,6 +389,7 @@ def eval_model_index(
     for idx_sample, ds_sample in enumerate(
         tqdm(dataloader, desc="eval")
     ):
+        then  = datetime.now()  
         if isinstance(model, TrainablePromptModel):
             # To do
             warnings.warn("Unknown model, classification fallback.")
@@ -416,6 +418,11 @@ def eval_model_index(
                     "token_type_ids": batch_tti.to(device),
                 }
             )[0]
+        # now = datetime.now()
+        # duration = now - then
+        # duration_in_s = duration.total_seconds()  
+        # print("feedforward duration, sample %d: %f" % (idx_sample, duration_in_s))
+        # print("   batch size = ", batch_iid.size())
 
         batch_size = output.shape[0]
 
