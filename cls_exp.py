@@ -16,18 +16,18 @@ parser = argparse.ArgumentParser(description="Prompt-based Training Script")
 parser.add_argument(
     "--train_dir",
     type=str,
-    default="/darkweb2/darkreddit_authorship_verification/darkreddit_authorship_verification_train.jsonl",
+    default="/darkweb/darknet_authorship_verification/silkroad1/darknet_authorship_verification_train.jsonl",
 )
 
 parser.add_argument(
     "--val_dir",
     type=str,
-    default="/darkweb2/darkreddit_authorship_verification/darkreddit_authorship_verification_val.jsonl",
+    default="/darkweb/darknet_authorship_verification/silkroad1/darknet_authorship_verification_val.jsonl",
 )
 parser.add_argument(
     "--test_dir",
     type=str,
-    default="/darkweb2/darkreddit_authorship_verification/darkreddit_authorship_verification_test.jsonl",
+    default="/darkweb/darknet_authorship_verification/silkroad1/darknet_authorship_verification_test.jsonl",
 )
 parser.add_argument(
     "--tb_dir",
@@ -40,9 +40,15 @@ parser.add_argument(
     default="Junk_XS_CLS_Openall",
 )
 
+parser.add_argument(
+    "--evals_per_epoch",
+    type=int,
+    default=2
+)
+
 parser.add_argument("--lr", type=float, default=1e-5) #0.001 0.00003
 parser.add_argument("--wd", type=float, default=1e-5)
-parser.add_argument("--batch_size", type=int, default=16)
+parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--epochs", type=int, default=20)
 parser.add_argument("--trainable_params", type=str, default="linear")  # bias, linear
 
@@ -54,6 +60,7 @@ test_dataset_path = args.test_dir
 lr = args.lr
 wd = args.wd
 batch_size = args.batch_size
+evals_per_epoch = args.evals_per_epoch
 epochs = args.epochs
 tb_dir = args.tb_dir
 trainable_params = args.trainable_params
@@ -61,8 +68,6 @@ exp_prefix = (
     args.exp_prefix
     + f"_lr{lr}_wd{wd}_bs{batch_size}_trainable_params{trainable_params}"
 )
-
-#best_model_path = os.path.join("./checkpoints", exp_prefix)
 
 log_dir = os.path.join(tb_dir, exp_prefix)
 best_model_path = os.path.join(log_dir, "checkpoints")
@@ -116,12 +121,6 @@ for p in trainable_params:
     else:
         p.requires_grad = True
 
-
-# for p in trainable_params:
-#     print(p['params'])
-# for (n, p) in model.model.named_parameters():
-#     print((n,p))
-
 optimizer = AdamW(trainable_params, lr=lr, weight_decay=wd)
 
 train_dataset = RedditClsDataset(
@@ -173,6 +172,18 @@ test_dataloader_full = DataLoader(
 
 loss_crt = CrossEntropyLoss()
 
+num_steps_train = len(train_dataloader)
+
+if evals_per_epoch == 0:
+    eval_step_idx = 2000
+else:
+    eval_step_idx = num_steps_train // evals_per_epoch
+
+print("Train dataset size: ", len(train_dataset))
+print("Total train steps: ", num_steps_train)
+print("Evaluating every %d steps" % (eval_step_idx))
+
+
 train_model(
     model=model,
     optimizer=optimizer,
@@ -185,4 +196,5 @@ train_model(
     epochs=epochs,
     tb_writer=tb_writer,
     best_model_path=best_model_path,
+    eval_step_idx=eval_step_idx
 )
