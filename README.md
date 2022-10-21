@@ -15,6 +15,58 @@ Overview:
 6. [Reddit datasets](#Reddit-datasets)
 
 ## Datasets summary
+If you use these dataset splits, please cite both papers:
+```
+@article{DBLP:journals/corr/abs-2112-05125,
+  author    = {Andrei Manolache and
+               Florin Brad and
+               Elena Burceanu and
+               Antonio Barbalau and
+               Radu Tudor Ionescu and
+               Marius Popescu},
+  title     = {Transferring BERT-like Transformers' Knowledge for Authorship Verification},
+  journal   = {CoRR},
+  volume    = {abs/2112.05125},
+  year      = {2021},
+  url       = {https://arxiv.org/abs/2112.05125},
+  eprinttype = {arXiv},
+  eprint    = {2112.05125},
+  timestamp = {Mon, 13 Dec 2021 17:51:48 +0100},
+  biburl    = {https://dblp.org/rec/journals/corr/abs-2112-05125.bib},
+  bibsource = {dblp computer science bibliography, https://dblp.org}
+}
+```
+
+```
+@inproceedings{Kestemont2020OverviewOT,
+  author    = {Mike Kestemont and
+               Enrique Manjavacas and
+               Ilia Markov and
+               Janek Bevendorff and
+               Matti Wiegmann and
+               Efstathios Stamatatos and
+               Martin Potthast and
+               Benno Stein},
+  editor    = {Linda Cappellato and
+               Carsten Eickhoff and
+               Nicola Ferro and
+               Aur{\'{e}}lie N{\'{e}}v{\'{e}}ol},
+  title     = {Overview of the Cross-Domain Authorship Verification Task at {PAN}
+               2020},
+  booktitle = {Working Notes of {CLEF} 2020 - Conference and Labs of the Evaluation
+               Forum, Thessaloniki, Greece, September 22-25, 2020},
+  series    = {{CEUR} Workshop Proceedings},
+  volume    = {2696},
+  publisher = {CEUR-WS.org},
+  year      = {2020},
+  url       = {http://ceur-ws.org/Vol-2696/paper\_264.pdf},
+  timestamp = {Tue, 27 Oct 2020 17:12:48 +0100},
+  biburl    = {https://dblp.org/rec/conf/clef/KestemontMMBWSP20.bib},
+  bibsource = {dblp computer science bibliography, https://dblp.org}
+}
+```
+
+
 | dataset |split type | filename | 
 |---------|-----------|----------|
 |PAN 2020|closed-set v1 and v2| [pan2020_closed_set_splits.zip](https://drive.google.com/file/d/18UPhYsdtFa8ObD0M6AeMdLxJ1XH42vHQ/view?usp=sharing) | 
